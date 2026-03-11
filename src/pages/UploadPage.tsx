@@ -92,22 +92,30 @@ export const UploadPage: React.FC = () => {
 
     setIsSubmitting(true);
     try {
-      await saveArtwork({
+      const artworkData: any = {
         title,
         artistName: artistName || 'Anonymous',
-        artistId: 'demo-user',
+        artistId: auth?.currentUser?.uid || 'demo-user',
         category,
         mediaUrl,
         mediaType,
         lat: location.lat,
         lng: location.lng,
         isPaid,
-        price: isPaid ? parseFloat(price) : undefined,
         likes: 0,
         createdAt: new Date(),
-        expiresAt: expiresIn24h ? new Date(Date.now() + 24 * 60 * 60 * 1000) : undefined,
         isActive: true
-      });
+      };
+
+      if (isPaid) {
+        artworkData.price = parseFloat(price);
+      }
+
+      if (expiresIn24h) {
+        artworkData.expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000);
+      }
+
+      await saveArtwork(artworkData);
       setShowSuccess(true);
     } catch (err) {
       console.error(err);

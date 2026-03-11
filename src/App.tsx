@@ -9,7 +9,15 @@ import { MapPage } from './pages/MapPage';
 import { ARPage } from './pages/ARPage';
 import { UploadPage } from './pages/UploadPage';
 
+import { handleRedirectResult } from './lib/firebase';
+
+import { ProfilePage } from './pages/ProfilePage';
+
 export default function App() {
+  React.useEffect(() => {
+    handleRedirectResult();
+  }, []);
+
   return (
     <BrowserRouter>
       <Routes>
@@ -17,7 +25,7 @@ export default function App() {
         <Route path="/map" element={<MapPage />} />
         <Route path="/ar/:id" element={<ARPage />} />
         <Route path="/upload" element={<UploadPage />} />
-        <Route path="/profile" element={<div className="h-screen bg-background text-white flex items-center justify-center">Profile (Coming Soon)</div>} />
+        <Route path="/profile" element={<ProfilePage />} />
       </Routes>
     </BrowserRouter>
   );

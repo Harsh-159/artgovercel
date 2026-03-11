@@ -1,6 +1,6 @@
 import { initializeApp } from 'firebase/app';
 import { getFirestore, collection, onSnapshot, doc, getDoc, addDoc, updateDoc, increment, query, where } from 'firebase/firestore';
-import { getAuth, signInWithPopup, GoogleAuthProvider } from 'firebase/auth';
+import { getAuth, signInWithRedirect, getRedirectResult, GoogleAuthProvider } from 'firebase/auth';
 import { getStorage } from 'firebase/storage';
 import { Artwork } from './types';
 
@@ -111,7 +111,27 @@ export const incrementLikes = async (id: string) => {
 export const signInWithGoogle = async () => {
   if (isDemo) return { user: { displayName: "Demo User", uid: "demo-user" } };
   const provider = new GoogleAuthProvider();
-  return await signInWithPopup(auth!, provider);
+  try {
+    await signInWithRedirect(auth!, provider);
+  } catch (error) {
+    console.error('Sign in error:', error);
+  }
+};
+
+export const handleRedirectResult = async () => {
+  if (isDemo) return null;
+  try {
+    const result = await getRedirectResult(auth!);
+    return result;
+  } catch (error) {
+    console.error('Redirect result error:', error);
+    return null;
+  }
+};
+
+export const incrementUnlockCount = async (id: string) => {
+  if (isDemo) return;
+  await updateDoc(doc(db!, 'artworks', id), { unlockCount: increment(1) });
 };
 
 export const seedDemoData = async () => {

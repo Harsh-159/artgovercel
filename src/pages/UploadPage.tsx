@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Category, MediaType } from '../lib/types';
 import { saveArtwork, signInWithGoogle } from '../lib/firebase';
+import { uploadToCloudinary } from '../lib/cloudinary';
 import { ArrowLeft, Upload as UploadIcon, MapPin } from 'lucide-react';
 import Map, { Marker } from 'react-map-gl';
 import { clsx } from 'clsx';
@@ -32,6 +33,7 @@ export const UploadPage: React.FC = () => {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [showSuccess, setShowSuccess] = useState(false);
   const [isUploadingMedia, setIsUploadingMedia] = useState(false);
+  const [uploadPercent, setUploadPercent] = useState(0);
   const [expiresIn24h, setExpiresIn24h] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -56,42 +58,19 @@ export const UploadPage: React.FC = () => {
     if (!file) return;
 
     setIsUploadingMedia(true);
+    setUploadPercent(0);
     try {
-      const CLOUDINARY_CLOUD_NAME = import.meta.env.VITE_CLOUDINARY_CLOUD_NAME || 'demo';
-      if (CLOUDINARY_CLOUD_NAME === 'demo') {
-        // Fallback demo mock
-        const isVideo = file.type.startsWith('video/');
-        const isAudio = file.type.startsWith('audio/');
-        setTimeout(() => {
-          setMediaUrl(isVideo ? "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4" : isAudio ? "https://www.soundhelix.com/examples/mp3/SoundHelix-Song-1.mp3" : "https://picsum.photos/seed/newart/800/600");
-          setMediaType(isVideo ? 'video' : isAudio ? 'audio' : 'image');
-          setIsUploadingMedia(false);
-        }, 1500);
-        return;
-      }
-
-      const formData = new FormData();
-      formData.append('file', file);
-      // User must configure this upload preset in Cloudinary (Unsigned)
-      formData.append('upload_preset', 'galleryos_preset');
-
-      const res = await fetch(`https://api.cloudinary.com/v1_1/${CLOUDINARY_CLOUD_NAME}/auto/upload`, {
-        method: 'POST',
-        body: formData,
+      const result = await uploadToCloudinary(file, (percent) => {
+        setUploadPercent(percent);
       });
-
-      if (!res.ok) {
-        throw new Error('Upload failed');
-      }
-
-      const data = await res.json();
-      setMediaUrl(data.secure_url);
-      setMediaType(file.type.startsWith('video/') ? 'video' : file.type.startsWith('audio/') ? 'audio' : 'image');
+      setMediaUrl(result.url);
+      setMediaType(result.mediaType);
     } catch (err) {
       console.error("Cloudinary upload error:", err);
       alert("Media upload failed. Check Cloudinary settings and Upload Preset.");
     } finally {
       setIsUploadingMedia(false);
+      setUploadPercent(0);
     }
   };
 
@@ -221,10 +200,16 @@ export const UploadPage: React.FC = () => {
                 type="button"
                 onClick={() => fileInputRef.current?.click()}
                 disabled={isUploadingMedia}
-                className="w-full aspect-video bg-surface border-2 border-dashed border-white/20 rounded-xl flex flex-col items-center justify-center text-text-secondary hover:text-white hover:border-white/40 transition-colors disabled:opacity-50"
+                className="w-full aspect-video bg-surface border-2 border-dashed border-white/20 rounded-xl flex flex-col items-center justify-center text-text-secondary hover:text-white hover:border-white/40 transition-colors disabled:opacity-50 overflow-hidden relative"
               >
+                {isUploadingMedia && (
+                  <div
+                    className="absolute bottom-0 left-0 h-1 bg-accent transition-all duration-300 ease-out"
+                    style={{ width: `${uploadPercent}%` }}
+                  />
+                )}
                 <UploadIcon size={32} className={clsx("mb-2", isUploadingMedia && "animate-bounce")} />
-                <span>{isUploadingMedia ? "Uploading to Cloudinary..." : "Tap to upload media"}</span>
+                <span>{isUploadingMedia ? `Uploading to Cloudinary... ${uploadPercent}%` : "Tap to upload media"}</span>
                 <span className="text-xs opacity-50 mt-1">Image, Video, or Audio (Max 50MB)</span>
               </button>
               <input

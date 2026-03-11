@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Category, MediaType } from '../lib/types';
-import { saveArtwork, signInWithGoogle } from '../lib/firebase';
+import { saveArtwork, signInWithGoogle, auth } from '../lib/firebase';
 import { uploadToCloudinary } from '../lib/cloudinary';
 import { ArrowLeft, Upload as UploadIcon, MapPin } from 'lucide-react';
 import Map, { Marker } from 'react-map-gl';
@@ -38,12 +38,22 @@ export const UploadPage: React.FC = () => {
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
-    // Auto-login for demo
-    signInWithGoogle().then(res => {
-      if (res?.user?.displayName) {
-        setArtistName(res.user.displayName);
-      }
-    }).catch(console.error);
+    let unsubAuth: (() => void) | undefined;
+
+    if (!auth) {
+      // Auto-login for demo
+      signInWithGoogle().then(res => {
+        if (res?.user?.displayName) {
+          setArtistName(res.user.displayName);
+        }
+      }).catch(console.error);
+    } else {
+      unsubAuth = auth.onAuthStateChanged(user => {
+        if (user?.displayName) {
+          setArtistName(user.displayName);
+        }
+      });
+    }
 
     if (navigator.geolocation) {
       navigator.geolocation.getCurrentPosition(
@@ -51,6 +61,8 @@ export const UploadPage: React.FC = () => {
         (err) => console.error(err)
       );
     }
+
+    return () => unsubAuth?.();
   }, []);
 
   const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {

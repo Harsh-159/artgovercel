@@ -1,5 +1,5 @@
-import React, { useEffect, useState } from 'react';
-import Map, { Marker } from 'react-map-gl';
+import React, { useEffect, useState, useRef } from 'react';
+import Map, { Marker, MapRef } from 'react-map-gl';
 import { useNavigate } from 'react-router-dom';
 import { getArtworks } from '../lib/firebase';
 import { Artwork } from '../lib/types';
@@ -23,10 +23,11 @@ export const MapPage: React.FC = () => {
   const navigate = useNavigate();
 
   const [userLocation, setUserLocation] = useState<{ lat: number, lng: number } | null>(null);
+  const mapRef = useRef<MapRef>(null);
 
   useEffect(() => {
     const unsubscribe = getArtworks(setArtworks);
-    
+
     // Get user location
     if (navigator.geolocation) {
       navigator.geolocation.getCurrentPosition(
@@ -52,6 +53,36 @@ export const MapPage: React.FC = () => {
 
     return () => unsubscribe();
   }, []);
+
+  useEffect(() => {
+    const interval = setInterval(() => {
+      const map = mapRef.current?.getMap();
+      if (!map || !userLocation) return;
+
+      const userPixel = map.project([userLocation.lng, userLocation.lat]);
+
+      document.querySelectorAll('.art-orb').forEach((orbEl) => {
+        const orbLng = parseFloat(orbEl.getAttribute('data-lng') || '0');
+        const orbLat = parseFloat(orbEl.getAttribute('data-lat') || '0');
+        const orbPixel = map.project([orbLng, orbLat]);
+
+        const dist = Math.sqrt(
+          (orbPixel.x - userPixel.x) ** 2 +
+          (orbPixel.y - userPixel.y) ** 2
+        );
+
+        if (dist < 240) {
+          const delay = (dist / 240) * 2000;
+          setTimeout(() => {
+            orbEl.classList.add('orb-flare');
+            setTimeout(() => orbEl.classList.remove('orb-flare'), 600);
+          }, delay);
+        }
+      });
+    }, 4000);
+
+    return () => clearInterval(interval);
+  }, [userLocation]);
 
   const handleOrbClick = (artwork: Artwork) => {
     setSelectedArtwork(artwork);
@@ -109,6 +140,7 @@ export const MapPage: React.FC = () => {
 
       {/* Map */}
       <Map
+        ref={mapRef}
         {...viewState}
         onMove={evt => setViewState(evt.viewState)}
         onClick={e => {
@@ -125,15 +157,26 @@ export const MapPage: React.FC = () => {
           <Marker longitude={userLocation.lng} latitude={userLocation.lat} anchor="center">
             <div className="relative flex items-center justify-center w-6 h-6">
               <div className="absolute w-full h-full bg-blue-500 rounded-full opacity-30 animate-ping"></div>
-              <div className="w-3 h-3 bg-blue-500 rounded-full border-2 border-white shadow-[0_0_10px_rgba(59,130,246,0.8)]"></div>
+
+              {/* Sonar Rings Overlay */}
+              <div className="sonar-ring-container absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 z-0 flex items-center justify-center pointer-events-none">
+                <div className="sonar-ring" />
+                <div className="sonar-ring" />
+                <div className="sonar-ring" />
+              </div>
+
+              {/* User Dot */}
+              <div className="w-3 h-3 bg-white rounded-full border-2 border-white shadow-[0_0_10px_rgba(68,136,255,0.8)] z-10 animate-[pulse-slow_3s_infinite]" style={{ backgroundColor: 'white', borderColor: 'white', boxSizing: 'content-box' }}>
+                <div className="absolute inset-0 bg-blue-500 rounded-full scale-75 blur-[2px]" />
+              </div>
             </div>
           </Marker>
         )}
-        
+
         {artworks.map(artwork => (
-          <Marker 
-            key={artwork.id} 
-            longitude={artwork.lng} 
+          <Marker
+            key={artwork.id}
+            longitude={artwork.lng}
             latitude={artwork.lat}
             anchor="center"
           >
@@ -150,13 +193,16 @@ export const MapPage: React.FC = () => {
         {selectedArtwork && (
           <div className="flex flex-col h-full pb-20">
             <div className="w-12 h-1 bg-white/20 rounded-full mx-auto mb-6 cursor-pointer" onClick={() => setSelectedArtwork(null)} />
-            
+
             <div className="flex justify-between items-start mb-4">
-              <div>
-                <h2 className="text-2xl font-heading font-bold text-white mb-1">{selectedArtwork.title}</h2>
-                <p className="text-text-secondary">by {selectedArtwork.artistName}</p>
+              <div className="flex-1 min-w-0 pr-4">
+                <h2 className="text-2xl font-heading font-bold text-white mb-1 truncate">{selectedArtwork.title}</h2>
+                <p className="text-text-secondary font-medium">by {selectedArtwork.artistName}</p>
+                {selectedArtwork.description && (
+                  <p className="text-sm text-text-secondary/80 italic mt-2 line-clamp-2">{selectedArtwork.description}</p>
+                )}
               </div>
-              <div className="bg-white/10 px-3 py-1 rounded-full text-xs font-mono uppercase tracking-wider text-white">
+              <div className="bg-white/10 px-3 py-1 rounded-full text-xs font-mono uppercase tracking-wider text-white whitespace-nowrap border border-white/5">
                 {selectedArtwork.category}
               </div>
             </div>
@@ -165,12 +211,12 @@ export const MapPage: React.FC = () => {
               <LikeButton artworkId={selectedArtwork.id} initialLikes={selectedArtwork.likes} />
             </div>
 
-            <button 
+            <button
               onClick={() => navigate(`/ar/${selectedArtwork.id}`)}
               className="w-full bg-accent hover:bg-accent/90 text-white font-bold py-4 rounded-full transition-all active:scale-95 flex items-center justify-center gap-2"
             >
-              {selectedArtwork.isPaid && localStorage.getItem(`unlocked_${selectedArtwork.id}`) !== 'true' 
-                ? `Unlock £${selectedArtwork.price?.toFixed(2)}` 
+              {selectedArtwork.isPaid && localStorage.getItem(`unlocked_${selectedArtwork.id}`) !== 'true'
+                ? `Unlock £${selectedArtwork.price?.toFixed(2)}`
                 : 'View in AR →'}
             </button>
           </div>

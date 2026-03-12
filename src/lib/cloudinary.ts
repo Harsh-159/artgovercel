@@ -8,7 +8,8 @@ export type UploadResult = {
 
 export const uploadToCloudinary = async (
     file: File,
-    onProgress?: (percent: number) => void
+    onProgress?: (percent: number) => void,
+    resourceType: 'auto' | 'raw' = 'auto'
 ): Promise<UploadResult> => {
     if (CLOUD_NAME === 'demo') {
         return new Promise((resolve) => {
@@ -57,7 +58,7 @@ export const uploadToCloudinary = async (
         };
 
         xhr.onerror = () => reject(new Error('Upload error'));
-        xhr.open('POST', `https://api.cloudinary.com/v1_1/${CLOUD_NAME}/auto/upload`);
+        xhr.open('POST', `https://api.cloudinary.com/v1_1/${CLOUD_NAME}/${resourceType}/upload`);
         xhr.send(formData);
     });
 };

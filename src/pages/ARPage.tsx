@@ -302,7 +302,7 @@ export const ARPage: React.FC = () => {
       }
 
       setSelectedArtwork(clickedOrb);
-      if (clickedOrb.mediaType === 'audio') {
+      if (clickedOrb.mediaType === 'audio' || clickedOrb.mediaType === 'voice') {
         setMode('music-playing');
         if (audioRef.current) {
           audioRef.current.src = clickedOrb.mediaUrl;
@@ -407,6 +407,21 @@ export const ARPage: React.FC = () => {
                 <video src={selectedArtwork.mediaUrl} autoPlay loop playsInline className="max-w-[70vw] max-h-[50vh] object-cover rounded shadow-inner" />
               </div>
             )}
+            {selectedArtwork.mediaType === 'model3d' && (
+              <div className="relative w-[70vw] h-[50vh] max-w-[400px] max-h-[400px]">
+                {/* @ts-ignore */}
+                <model-viewer
+                  src={selectedArtwork.mediaUrl}
+                  auto-rotate
+                  camera-controls
+                  style={{ width: '100%', height: '100%', backgroundColor: 'transparent' }}
+                  rotation-per-second="45deg"
+                  interaction-prompt="none"
+                >
+                  {/* @ts-ignore */}
+                </model-viewer>
+              </div>
+            )}
           </div>
         </div>
       )}
@@ -420,7 +435,7 @@ export const ARPage: React.FC = () => {
         )}
       >
         <div className="w-12 h-12 rounded-full overflow-hidden flex-shrink-0 bg-accent text-white flex items-center justify-center font-bold relative shadow-inner">
-          {selectedArtwork?.mediaType === 'audio' && isPlaying && (
+          {(selectedArtwork?.mediaType === 'audio' || selectedArtwork?.mediaType === 'voice') && isPlaying && (
             <span className="absolute inset-0 rounded-full border-2 border-white/50 animate-ping"></span>
           )}
           <span className="text-2xl mt-1">♫</span>

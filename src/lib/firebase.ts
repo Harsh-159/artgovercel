@@ -129,10 +129,10 @@ export const handleRedirectResult = async () => {
   }
 };
 
-export const incrementUnlockCount = async (id: string) => {
-  if (isDemo) return;
-  await updateDoc(doc(db!, 'artworks', id), { unlockCount: increment(1) });
-};
+// export const incrementUnlockCount = async (id: string) => {
+//   if (isDemo) return;
+//   await updateDoc(doc(db!, 'artworks', id), { unlockCount: increment(1) });
+// };
 
 export const seedDemoData = async () => {
   if (isDemo) return;
@@ -145,4 +145,14 @@ export const seedDemoData = async () => {
   await updateDoc(doc(db!, 'system', 'seeded'), { done: true }).catch(async () => {
     await addDoc(collection(db!, 'system'), { done: true, id: 'seeded' });
   });
+};
+
+export const incrementUnlockCount = async (artworkId: string) => {
+  try {
+    await updateDoc(doc(db, 'artworks', artworkId), {
+      unlockCount: increment(1)
+    });
+  } catch (error) {
+    console.error('Failed to increment unlock count:', error);
+  }
 };

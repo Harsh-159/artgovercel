@@ -258,32 +258,21 @@ export const ARPage: React.FC = () => {
 
       // Perspective Transform rendering for Placed Objects
       if (mode === 'placed' && placedOrientation && transformRef.current) {
-<<<<<<<<< Temporary merge branch 1
+        let diffHeading = heading - placedOrientation.heading;
+        if (diffHeading > 180) diffHeading -= 360;
+        if (diffHeading < -180) diffHeading += 360;
+
         const dBeta = beta - placedOrientation.beta;
         const dGamma = gamma - placedOrientation.gamma;
 
-        // Rotate relative to anchor
-        const rotateX = Math.max(-90, Math.min(90, placedOrientation.beta - 90 - dBeta));
-        const rotateY = -dGamma;
+        // Translate based on how much the device has turned from original placement
+        const translateX = -(diffHeading / 30) * (window.innerWidth / 2);
+        const translateY = -(dBeta / 30) * (window.innerHeight / 2);
 
-        transformRef.current.style.transform = `rotateX(${rotateX}deg) rotateY(${rotateY}deg) translateZ(-300px)`;
-=========
-         let diffHeading = heading - placedOrientation.heading;
-         if (diffHeading > 180) diffHeading -= 360;
-         if (diffHeading < -180) diffHeading += 360;
-
-         const dBeta = beta - placedOrientation.beta;
-         const dGamma = gamma - placedOrientation.gamma;
-
-         // Translate based on how much the device has turned from original placement
-         const translateX = -(diffHeading / 30) * (window.innerWidth / 2);
-         const translateY = -(dBeta / 30) * (window.innerHeight / 2);
-
-         // Anchor rotation
-         const rotateX = placedOrientation.beta - 90;
-         
-         transformRef.current.style.transform = `translate3d(${translateX}px, ${translateY}px, -400px) rotateX(${rotateX}deg) rotateZ(${-dGamma}deg)`;
->>>>>>>>> Temporary merge branch 2
+        // Anchor rotation
+        const rotateX = placedOrientation.beta - 90;
+        
+        transformRef.current.style.transform = `translate3d(${translateX}px, ${translateY}px, -400px) rotateX(${rotateX}deg) rotateZ(${-dGamma}deg)`;
       }
 
       animationFrameId = requestAnimationFrame(render);

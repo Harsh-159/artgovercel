@@ -1,6 +1,6 @@
 import { initializeApp } from 'firebase/app';
 import { getFirestore, collection, onSnapshot, doc, getDoc, getDocs, setDoc, addDoc, updateDoc, increment, query, where } from 'firebase/firestore';
-import { getAuth, signInWithRedirect, getRedirectResult, GoogleAuthProvider } from 'firebase/auth';
+import { getAuth, signInWithRedirect, getRedirectResult, GoogleAuthProvider, signOut as firebaseSignOut } from 'firebase/auth';
 import { getStorage } from 'firebase/storage';
 import { Artwork } from './types';
 
@@ -157,6 +157,15 @@ export const signInWithGoogle = async () => {
     await signInWithRedirect(auth!, provider);
   } catch (error) {
     console.error('Sign in error:', error);
+  }
+};
+
+export const signOutUser = async () => {
+  if (isDemo) return;
+  try {
+    await firebaseSignOut(auth!);
+  } catch (error) {
+    console.error('Sign out error:', error);
   }
 };
 

@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Artwork, AccessTier, Certificate } from '../lib/types';
 import { Lock } from 'lucide-react';
-import { incrementUnlockCount, saveCertificate, auth } from '../lib/firebase';
+import { incrementUnlockCount, saveCertificate, auth, getUserProfile, updateUserProfile } from '../lib/firebase';
 import { useNavigate } from 'react-router-dom';
 import { clsx } from 'clsx';
 import { loadStripe } from '@stripe/stripe-js';
@@ -174,6 +174,22 @@ export const UnlockModal: React.FC<{
       localStorage.setItem(`unlocked_${artwork.id}`, 'true');
       localStorage.setItem(`owned_${artwork.id}`, cert.tokenId);
       try { await incrementUnlockCount(artwork.id); } catch (err) { }
+
+      // Update portal economy
+      if (auth?.currentUser?.uid) {
+        try {
+          const profile = await getUserProfile(auth.currentUser.uid);
+          const newPurchasedCount = profile.purchasedCount + 1;
+          const userGetsPortal = newPurchasedCount > 0 && newPurchasedCount % 3 === 0;
+          await updateUserProfile(auth.currentUser.uid, {
+            purchasedCount: newPurchasedCount,
+            portalCount: profile.portalCount + (userGetsPortal ? 1 : 0)
+          });
+        } catch (err) {
+          console.error('Failed to update portal economy', err);
+        }
+      }
+
       // Immediate redirect to Certificate bypassing intermediate UI
       navigate(`/certificate/${cert.tokenId}`);
     }

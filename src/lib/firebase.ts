@@ -2,7 +2,7 @@ import { initializeApp } from 'firebase/app';
 import { getFirestore, collection, onSnapshot, doc, getDoc, getDocs, setDoc, addDoc, updateDoc, increment, query, where } from 'firebase/firestore';
 import { getAuth, signInWithRedirect, getRedirectResult, GoogleAuthProvider, signOut as firebaseSignOut } from 'firebase/auth';
 import { getStorage } from 'firebase/storage';
-import { Artwork } from './types';
+import { Artwork, UserProfile } from './types';
 
 const firebaseConfig = {
   apiKey: import.meta.env.VITE_FIREBASE_API_KEY || "demo",
@@ -57,6 +57,46 @@ export const getOwnershipByUser = async (
   } catch (error) {
     console.error('Failed to fetch ownership:', error);
     return null;
+  }
+};
+
+export const getUserProfile = async (uid: string): Promise<UserProfile> => {
+  if (isDemo) {
+    try {
+      const local = localStorage.getItem(`profile_${uid}`);
+      if (local) return JSON.parse(local);
+    } catch (e) { }
+    return { uid, portalActive: false, portalCount: 0, purchasedCount: 0 };
+  }
+
+  try {
+    const docRef = doc(db!, 'users', uid);
+    const snap = await getDoc(docRef);
+    if (snap.exists()) {
+      return snap.data() as UserProfile;
+    } else {
+      const newProfile: UserProfile = { uid, portalActive: false, portalCount: 0, purchasedCount: 0 };
+      await setDoc(docRef, newProfile);
+      return newProfile;
+    }
+  } catch (error) {
+    console.error('Failed to fetch user profile:', error);
+    return { uid, portalActive: false, portalCount: 0, purchasedCount: 0 };
+  }
+};
+
+export const updateUserProfile = async (uid: string, data: Partial<UserProfile>): Promise<void> => {
+  if (isDemo) {
+    const p = await getUserProfile(uid);
+    localStorage.setItem(`profile_${uid}`, JSON.stringify({ ...p, ...data }));
+    return;
+  }
+
+  try {
+    const docRef = doc(db!, 'users', uid);
+    await setDoc(docRef, data, { merge: true });
+  } catch (error) {
+    console.error('Failed to update user profile:', error);
   }
 };
 

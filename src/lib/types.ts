@@ -56,3 +56,13 @@ export interface Certificate {
   purchasedAt: string;    // ISO date string
   transactionId: string;  // Stripe paymentIntent ID
 }
+
+export interface UserProfile {
+  uid: string;
+  portalActive: boolean;
+  portalCity?: string;
+  portalCoordinates?: { lat: number; lng: number };
+  portalActivatedAt?: string; // ISO date string
+  portalCount: number;
+  purchasedCount: number;
+}

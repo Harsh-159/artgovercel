@@ -4,6 +4,7 @@ import { getArtworks } from '../lib/firebase';
 import { Artwork } from '../lib/types';
 import { UnlockModal } from '../components/UnlockModal';
 import { ArrowLeft } from 'lucide-react';
+import { usePortalState } from '../lib/usePortalState';
 
 export const ARPage: React.FC = () => {
   const navigate = useNavigate();
@@ -12,6 +13,7 @@ export const ARPage: React.FC = () => {
   const [artworks, setArtworks] = useState<Artwork[]>([]);
   const [selectedArtwork, setSelectedArtwork] = useState<Artwork | null>(null);
   const [lockedSelected, setLockedSelected] = useState<Artwork | null>(null);
+  const { profile } = usePortalState();
 
   useEffect(() => {
     // Check if returning from Stripe checkout redirect
@@ -70,8 +72,13 @@ export const ARPage: React.FC = () => {
       fbProject: import.meta.env.VITE_FIREBASE_PROJECT_ID || '',
     });
 
+    if (profile?.portalActive && profile.portalCoordinates) {
+      params.append('portalLat', profile.portalCoordinates.lat.toString());
+      params.append('portalLng', profile.portalCoordinates.lng.toString());
+    }
+
     window.location.href = '/ar-view.html?' + params.toString();
-  }, [selectedArtwork, isUnlocked]);
+  }, [selectedArtwork, isUnlocked, profile]);
 
   if (!selectedArtwork && !lockedSelected) {
     return (

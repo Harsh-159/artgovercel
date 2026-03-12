@@ -562,15 +562,17 @@
     const price = parseFloat(params.get('price') || '0');
     const appOrigin = params.get('origin') || window.location.origin;
     const FB_PROJECT = params.get('fbProject');
+    const portalLat = params.get('portalLat');
+    const portalLng = params.get('portalLng');
 
     // ── Proximity vibration state ──────────────────────────────────────────
     // Tracks which (artworkId + threshold) combos have already fired.
     // Key format: `${artworkId}_${threshold}` e.g. "abc123_50"
     const firedThresholds = new Set();
     const THRESHOLDS = [
-      { dist: 5,  key: '5',  vibration: [200, 100, 200, 100, 400], flashClass: 'flash-5'  },
-      { dist: 20, key: '20', vibration: [150, 100, 150],            flashClass: 'flash-20' },
-      { dist: 50, key: '50', vibration: [100],                      flashClass: 'flash-50' },
+      { dist: 5, key: '5', vibration: [200, 100, 200, 100, 400], flashClass: 'flash-5' },
+      { dist: 20, key: '20', vibration: [150, 100, 150], flashClass: 'flash-20' },
+      { dist: 50, key: '50', vibration: [100], flashClass: 'flash-50' },
     ];
     const supportsVibration = typeof navigator.vibrate === 'function';
     console.log('[Proximity] navigator.vibrate supported:', supportsVibration);
@@ -819,7 +821,7 @@
           <a-light type="directional" color="#ffffff" intensity="0.6" position="-1 1 1"></a-light>
 
           <a-camera 
-            gps-projected-camera="gpsMinDistance: 2; originDestinationOffset: 0" 
+            gps-projected-camera="gpsMinDistance: 2; originDestinationOffset: 0${portalLat && portalLng ? `; simulateLatitude: ${portalLat}; simulateLongitude: ${portalLng}` : ''}" 
             rotation-reader>
           </a-camera>
           ${entityMarkup}

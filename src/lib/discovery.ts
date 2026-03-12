@@ -4,6 +4,7 @@ export interface DiscoveryPreferences {
     mood: string | null;
     categories: string[];
     maxDistanceMetres: number | null;
+    keyword: string | null;
 }
 
 // Mood → category affinity weights (hardcoded, pseudo-intelligent)
@@ -50,6 +51,17 @@ export const matchArtworks = (
             // Category filter (if any selected)
             if (prefs.categories.length === 0) return true;
             return prefs.categories.includes(a.category);
+        })
+        .filter(a => {
+            // Keyword filter
+            if (!prefs.keyword || prefs.keyword.trim() === '') return true;
+            const kw = prefs.keyword.toLowerCase();
+            return (
+                a.title.toLowerCase().includes(kw) ||
+                (a.description && a.description.toLowerCase().includes(kw)) ||
+                a.artistName.toLowerCase().includes(kw) ||
+                a.category.toLowerCase().includes(kw)
+            );
         })
         .map(a => {
             // Score each artwork

@@ -13,6 +13,7 @@ export interface Artwork {
   category: Category;
   mediaUrl: string;
   mediaType: MediaType;
+  description?: string;
   lat: number;
   lng: number;
   isPaid: boolean;

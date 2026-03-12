@@ -86,7 +86,7 @@ export const MapPage: React.FC = () => {
       pitch: next3D ? 60 : 0,
       bearing: 0,
       duration: 600,
-      easing: (t: number) => t < 0.5 ? 2*t*t : -1+(4-2*t)*t,
+      easing: (t: number) => t < 0.5 ? 2 * t * t : -1 + (4 - 2 * t) * t,
     });
     // Let Mapbox recalculate tile grid after transition
     setTimeout(() => map.resize(), 650);
@@ -250,6 +250,14 @@ export const MapPage: React.FC = () => {
                 ? `Unlock £${selectedArtwork.price?.toFixed(2)}`
                 : 'View in AR →'}
             </button>
+            {localStorage.getItem(`owned_${selectedArtwork.id}`) && (
+              <button
+                onClick={() => navigate(`/certificate/${localStorage.getItem(`owned_${selectedArtwork.id}`)}`)}
+                className="w-full bg-[#FFD700]/10 hover:bg-[#FFD700]/20 text-[#FFD700] font-bold py-3 rounded-full transition-all active:scale-95 flex items-center justify-center gap-2 mt-3 border border-[#FFD700]/20"
+              >
+                ⭐ View Certificate →
+              </button>
+            )}
           </div>
         )}
       </div>

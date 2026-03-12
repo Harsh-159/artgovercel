@@ -194,11 +194,8 @@ export const ProfilePage: React.FC = () => {
                 </div>
 
                 {/* Collection Highlight */}
-                <div
-                    onClick={() => navigate('/certificate/collection')}
-                    className="w-full bg-gradient-to-r from-[#FFD700]/10 to-transparent border border-[#FFD700]/20 rounded-2xl p-4 mb-10 flex items-center justify-between cursor-pointer hover:bg-[#FFD700]/20 transition-colors"
-                >
-                    <div className="flex items-center gap-4">
+                <div className="w-full border border-[#FFD700]/20 rounded-2xl mb-10 overflow-hidden">
+                    <div className="bg-gradient-to-r from-[#FFD700]/10 to-transparent p-4 flex items-center gap-4">
                         <div className="w-12 h-12 rounded-full bg-[#FFD700]/20 flex items-center justify-center">
                             <Award className="text-[#FFD700]" size={24} />
                         </div>
@@ -209,7 +206,29 @@ export const ProfilePage: React.FC = () => {
                             </p>
                         </div>
                     </div>
-                    <ChevronRight className="text-[#FFD700]/50" />
+                    {ownedCount > 0 && (
+                        <div className="px-4 pb-4 flex flex-col gap-2">
+                            {artworks.filter(a => localStorage.getItem(`owned_${a.id}`)).map(a => {
+                                const tokenId = localStorage.getItem(`owned_${a.id}`);
+                                return (
+                                    <button
+                                        key={a.id}
+                                        onClick={() => navigate(`/certificate/${tokenId}`)}
+                                        className="flex items-center justify-between bg-[#FFD700]/5 hover:bg-[#FFD700]/15 border border-[#FFD700]/10 rounded-xl px-4 py-3 transition-colors text-left w-full"
+                                    >
+                                        <div className="flex items-center gap-3 min-w-0">
+                                            <span className="text-lg">⭐</span>
+                                            <div className="min-w-0">
+                                                <p className="text-sm font-bold text-white truncate">{a.title}</p>
+                                                <p className="text-[11px] text-[#FFD700]/60 font-mono truncate">{tokenId?.slice(0, 12)}...</p>
+                                            </div>
+                                        </div>
+                                        <ChevronRight size={16} className="text-[#FFD700]/50 flex-shrink-0" />
+                                    </button>
+                                );
+                            })}
+                        </div>
+                    )}
                 </div>
 
                 {/* My Pins Gallery */}
@@ -251,10 +270,9 @@ export const ProfilePage: React.FC = () => {
                         {artworks.map(art => (
                             <div
                                 key={art.id}
-                                className="bg-surface/80 border border-white/10 rounded-2xl overflow-hidden cursor-pointer group hover:border-white/30 transition-all hover:-translate-y-1 shadow-lg"
-                                onClick={() => navigate(`/ar/${art.id}`)}
+                                className="bg-surface/80 border border-white/10 rounded-2xl overflow-hidden group hover:border-white/30 transition-all hover:-translate-y-1 shadow-lg"
                             >
-                                <div className="aspect-square relative overflow-hidden bg-black">
+                                <div className="aspect-square relative overflow-hidden bg-black cursor-pointer" onClick={() => navigate(`/ar/${art.id}`)}>
                                     {art.mediaType === 'image' && <img src={art.mediaUrl} alt={art.title} className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-700" />}
                                     {art.mediaType === 'video' && <video src={art.mediaUrl} className="w-full h-full object-cover pointer-events-none group-hover:scale-110 transition-transform duration-700" muted />}
                                     {(art.mediaType === 'audio' || art.mediaType === 'voice') && (
@@ -298,6 +316,15 @@ export const ProfilePage: React.FC = () => {
                                         <h3 className="font-bold text-white truncate text-sm drop-shadow-md">{art.title}</h3>
                                     </div>
                                 </div>
+                                {/* Certificate link for owned artworks */}
+                                {localStorage.getItem(`owned_${art.id}`) && (
+                                    <button
+                                        onClick={() => navigate(`/certificate/${localStorage.getItem(`owned_${art.id}`)}`)}
+                                        className="w-full py-2 text-[11px] font-bold text-[#FFD700] bg-[#FFD700]/5 hover:bg-[#FFD700]/15 transition-colors flex items-center justify-center gap-1.5 border-t border-[#FFD700]/10"
+                                    >
+                                        <Award size={12} /> View Certificate
+                                    </button>
+                                )}
                             </div>
                         ))}
                     </div>

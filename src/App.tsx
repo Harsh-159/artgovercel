@@ -12,6 +12,7 @@ import { UploadPage } from './pages/UploadPage';
 import { handleRedirectResult } from './lib/firebase';
 
 import { ProfilePage } from './pages/ProfilePage';
+import { CertificatePage } from './pages/CertificatePage';
 
 export default function App() {
   React.useEffect(() => {
@@ -26,6 +27,7 @@ export default function App() {
         <Route path="/ar/:id" element={<ARPage />} />
         <Route path="/upload" element={<UploadPage />} />
         <Route path="/profile" element={<ProfilePage />} />
+        <Route path="/certificate/:tokenId" element={<CertificatePage />} />
       </Routes>
     </BrowserRouter>
   );

@@ -8,15 +8,18 @@ export default async function handler(req: any, res: any) {
     }
 
     try {
-        const { amount, artworkId } = req.body;
+        const { amount, artworkId, tier } = req.body;
 
         const paymentIntent = await stripe.paymentIntents.create({
             amount: Math.round(amount * 100),
             currency: 'gbp',
-            metadata: { artworkId }
+            metadata: { artworkId, tier }
         });
 
-        res.status(200).json({ clientSecret: paymentIntent.client_secret });
+        res.status(200).json({
+            clientSecret: paymentIntent.client_secret,
+            paymentIntentId: paymentIntent.id
+        });
     } catch (error: any) {
         console.error(error);
         res.status(500).json({ error: error.message });

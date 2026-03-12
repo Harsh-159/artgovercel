@@ -46,7 +46,7 @@ export const ARPage: React.FC = () => {
   const streamRef = useRef<MediaStream | null>(null);
   
   const [isPlaying, setIsPlaying] = useState(false);
-  const [placedOrientation, setPlacedOrientation] = useState<{ beta: number, gamma: number } | null>(null);
+  const [placedOrientation, setPlacedOrientation] = useState<{ heading: number, beta: number, gamma: number } | null>(null);
 
   const stateRef = useRef({
     location: null as { lat: number; lng: number } | null,
@@ -82,6 +82,7 @@ export const ARPage: React.FC = () => {
   useEffect(() => {
     if (permissionGranted && videoRef.current && streamRef.current) {
       videoRef.current.srcObject = streamRef.current;
+      videoRef.current.play().catch(console.error);
     }
   }, [permissionGranted]);
 
@@ -156,8 +157,8 @@ export const ARPage: React.FC = () => {
               if (diff > 180) diff -= 360;
               if (diff < -180) diff += 360;
 
-              // Only render if within 60 degrees of view
-              if (Math.abs(diff) <= 60) {
+              // Only render if within 60 degrees of view and within 50 meters
+              if (Math.abs(diff) <= 60 && dist <= 50) {
                 foundAny = true;
                 const x = ((diff + 60) / 120) * width;
                 const y = height / 2;
@@ -240,14 +241,21 @@ export const ARPage: React.FC = () => {
 
       // Perspective Transform rendering for Placed Objects
       if (mode === 'placed' && placedOrientation && transformRef.current) {
+         let diffHeading = heading - placedOrientation.heading;
+         if (diffHeading > 180) diffHeading -= 360;
+         if (diffHeading < -180) diffHeading += 360;
+
          const dBeta = beta - placedOrientation.beta;
          const dGamma = gamma - placedOrientation.gamma;
 
-         // Rotate relative to anchor
-         const rotateX = Math.max(-90, Math.min(90, placedOrientation.beta - 90 - dBeta));
-         const rotateY = -dGamma;
+         // Translate based on how much the device has turned from original placement
+         const translateX = -(diffHeading / 30) * (window.innerWidth / 2);
+         const translateY = -(dBeta / 30) * (window.innerHeight / 2);
+
+         // Anchor rotation
+         const rotateX = placedOrientation.beta - 90;
          
-         transformRef.current.style.transform = `rotateX(${rotateX}deg) rotateY(${rotateY}deg) translateZ(-300px)`;
+         transformRef.current.style.transform = `translate3d(${translateX}px, ${translateY}px, -400px) rotateX(${rotateX}deg) rotateZ(${-dGamma}deg)`;
       }
 
       animationFrameId = requestAnimationFrame(render);
@@ -293,8 +301,8 @@ export const ARPage: React.FC = () => {
 
   const handleSurfaceTap = () => {
     if (mode === 'surface-detection') {
-      const { beta, gamma } = stateRef.current.orientation;
-      setPlacedOrientation({ beta, gamma });
+      const { heading, beta, gamma } = stateRef.current.orientation;
+      setPlacedOrientation({ heading, beta, gamma });
       setMode('placed');
     }
   };

@@ -21,6 +21,8 @@ export const MapPage: React.FC = () => {
   });
   const navigate = useNavigate();
 
+  const [userLocation, setUserLocation] = useState<{ lat: number, lng: number } | null>(null);
+
   useEffect(() => {
     const unsubscribe = getArtworks(setArtworks);
     
@@ -28,6 +30,7 @@ export const MapPage: React.FC = () => {
     if (navigator.geolocation) {
       navigator.geolocation.getCurrentPosition(
         (pos) => {
+          setUserLocation({ lat: pos.coords.latitude, lng: pos.coords.longitude });
           setViewState(prev => ({
             ...prev,
             longitude: pos.coords.longitude,
@@ -52,8 +55,37 @@ export const MapPage: React.FC = () => {
         <h1 className="text-2xl font-heading font-bold text-white drop-shadow-[0_0_10px_rgba(255,255,255,0.5)] pointer-events-auto">
           GalleryOS
         </h1>
-        <div className="w-10 h-10 rounded-full bg-surface border border-white/10 flex items-center justify-center pointer-events-auto cursor-pointer">
-          <span className="text-sm">👤</span>
+        <div className="flex gap-2 items-center pointer-events-auto">
+          <button
+            onClick={() => {
+              if (navigator.geolocation) {
+                navigator.geolocation.getCurrentPosition(
+                  (pos) => {
+                    setUserLocation({ lat: pos.coords.latitude, lng: pos.coords.longitude });
+                    setViewState(prev => ({
+                      ...prev,
+                      longitude: pos.coords.longitude,
+                      latitude: pos.coords.latitude,
+                      zoom: 15
+                    }));
+                  },
+                  (err) => {
+                    console.error("Locate Me error:", err);
+                    alert("Could not get your location.");
+                  }
+                );
+              } else {
+                alert("Geolocation is not supported by your browser.");
+              }
+            }}
+            className="bg-white/10 hover:bg-white/20 backdrop-blur-md rounded-full px-4 h-10 flex items-center gap-2 text-white font-bold transition-all border border-white/10"
+          >
+            <span>📍</span>
+            <span className="text-sm">Locate Me</span>
+          </button>
+          <div className="w-10 h-10 rounded-full bg-surface border border-white/10 flex items-center justify-center cursor-pointer">
+            <span className="text-sm">👤</span>
+          </div>
         </div>
       </div>
 
@@ -61,10 +93,25 @@ export const MapPage: React.FC = () => {
       <Map
         {...viewState}
         onMove={evt => setViewState(evt.viewState)}
+        onClick={e => {
+          // ensure we don't trigger when clicking a marker
+          if ((e.originalEvent.target as HTMLElement).tagName.toLowerCase() === 'canvas') {
+            navigate('/upload', { state: { lat: e.lngLat.lat, lng: e.lngLat.lng } });
+          }
+        }}
         mapStyle="mapbox://styles/mapbox/dark-v11"
         mapboxAccessToken={MAPBOX_TOKEN}
         style={{ width: '100%', height: '100%' }}
       >
+        {userLocation && (
+          <Marker longitude={userLocation.lng} latitude={userLocation.lat} anchor="center">
+            <div className="relative flex items-center justify-center w-6 h-6">
+              <div className="absolute w-full h-full bg-blue-500 rounded-full opacity-30 animate-ping"></div>
+              <div className="w-3 h-3 bg-blue-500 rounded-full border-2 border-white shadow-[0_0_10px_rgba(59,130,246,0.8)]"></div>
+            </div>
+          </Marker>
+        )}
+        
         {artworks.map(artwork => (
           <Marker 
             key={artwork.id} 

@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useLocation } from 'react-router-dom';
 import { Category, MediaType } from '../lib/types';
 import { saveArtwork, signInWithGoogle, auth } from '../lib/firebase';
 import { uploadToCloudinary } from '../lib/cloudinary';
@@ -22,6 +22,7 @@ const categories: { id: Category; label: string; color: string }[] = [
 
 export const UploadPage: React.FC = () => {
   const navigate = useNavigate();
+  const { state } = useLocation() as { state: { lat: number; lng: number } | null };
   const [title, setTitle] = useState('');
   const [artistName, setArtistName] = useState('');
   const [category, setCategory] = useState<Category>('visual');
@@ -29,13 +30,28 @@ export const UploadPage: React.FC = () => {
   const [mediaType, setMediaType] = useState<MediaType>('image');
   const [isPaid, setIsPaid] = useState(false);
   const [price, setPrice] = useState('0.99');
-  const [location, setLocation] = useState({ lat: 52.2053, lng: 0.1218 });
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [showSuccess, setShowSuccess] = useState(false);
   const [isUploadingMedia, setIsUploadingMedia] = useState(false);
   const [uploadPercent, setUploadPercent] = useState(0);
   const [expiresIn24h, setExpiresIn24h] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const [viewState, setViewState] = useState({
+    longitude: state?.lng || 0.1218,
+    latitude: state?.lat || 52.2053,
+    zoom: 15
+  });
+  
+  // Keep the old `location` pointer in sync for the form
+  const [location, setLocation] = useState({ lat: viewState.latitude, lng: viewState.longitude });
+
+  useEffect(() => {
+    setLocation({ lat: viewState.latitude, lng: viewState.longitude });
+  }, [viewState]);
+
+  // Render User Location if available
+  const [userLocation, setUserLocation] = useState<{ lat: number, lng: number } | null>(null);
 
   useEffect(() => {
     let unsubAuth: (() => void) | undefined;
@@ -55,15 +71,22 @@ export const UploadPage: React.FC = () => {
       });
     }
 
-    if (navigator.geolocation) {
+    if (navigator.geolocation && !state) {
       navigator.geolocation.getCurrentPosition(
-        (pos) => setLocation({ lat: pos.coords.latitude, lng: pos.coords.longitude }),
+        (pos) => {
+           setUserLocation({ lat: pos.coords.latitude, lng: pos.coords.longitude });
+           setViewState({
+             longitude: pos.coords.longitude,
+             latitude: pos.coords.latitude,
+             zoom: 15
+           });
+        },
         (err) => console.error(err)
       );
     }
 
     return () => unsubAuth?.();
-  }, []);
+  }, [state]);
 
   const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -245,16 +268,47 @@ export const UploadPage: React.FC = () => {
 
         {/* Location */}
         <div>
-          <label className="block text-sm font-bold text-text-secondary mb-2 uppercase tracking-wider">Location Pin</label>
+          <div className="flex items-center justify-between mb-2">
+            <label className="block text-sm font-bold text-text-secondary uppercase tracking-wider">Location Pin</label>
+            <button
+              type="button"
+              onClick={() => {
+                if (navigator.geolocation) {
+                  navigator.geolocation.getCurrentPosition(
+                    (pos) => {
+                      setUserLocation({ lat: pos.coords.latitude, lng: pos.coords.longitude });
+                      setViewState({
+                        longitude: pos.coords.longitude,
+                        latitude: pos.coords.latitude,
+                        zoom: 15
+                      });
+                      setLocation({ lat: pos.coords.latitude, lng: pos.coords.longitude });
+                    }
+                  );
+                }
+              }}
+              className="text-xs bg-white/10 hover:bg-white/20 text-white px-3 py-1 rounded-full transition-colors flex items-center gap-1"
+            >
+              <MapPin size={12} />
+              Locate Me
+            </button>
+          </div>
           <div className="h-[300px] rounded-xl overflow-hidden border border-white/10 relative">
             <Map
-              longitude={location.lng}
-              latitude={location.lat}
-              zoom={15}
+              {...viewState}
+              onMove={e => setViewState(e.viewState)}
               mapStyle="mapbox://styles/mapbox/dark-v11"
               mapboxAccessToken={MAPBOX_TOKEN}
-              onMove={e => setLocation({ lat: e.viewState.latitude, lng: e.viewState.longitude })}
             >
+              {userLocation && (
+                <Marker longitude={userLocation.lng} latitude={userLocation.lat} anchor="center">
+                  <div className="relative flex items-center justify-center w-6 h-6">
+                    <div className="absolute w-full h-full bg-blue-500 rounded-full opacity-30 animate-ping"></div>
+                    <div className="w-3 h-3 bg-blue-500 rounded-full border-2 border-white shadow-[0_0_10px_rgba(59,130,246,0.8)]"></div>
+                  </div>
+                </Marker>
+              )}
+              
               <Marker longitude={location.lng} latitude={location.lat} anchor="bottom" draggable onDragEnd={e => setLocation({ lat: e.lngLat.lat, lng: e.lngLat.lng })}>
                 <MapPin size={32} className="text-accent drop-shadow-lg" />
               </Marker>

@@ -48,12 +48,13 @@ export const ARPage: React.FC = () => {
   const streamRef = useRef<MediaStream | null>(null);
 
   const [isPlaying, setIsPlaying] = useState(false);
-  const [placedOrientation, setPlacedOrientation] = useState<{ beta: number, gamma: number } | null>(null);
+  const [placedOrientation, setPlacedOrientation] = useState<{ heading: number, beta: number, gamma: number } | null>(null);
 
   const stateRef = useRef({
     location: null as { lat: number; lng: number } | null,
     orientation: { heading: 0, beta: 0, gamma: 0 },
-    visibleOrbs: [] as any[]
+    visibleOrbs: [] as any[],
+    orbStates: {} as Record<string, { scale: number }>
   });
 
   useEffect(() => {
@@ -99,6 +100,7 @@ export const ARPage: React.FC = () => {
   useEffect(() => {
     if (permissionGranted && videoRef.current && streamRef.current) {
       videoRef.current.srcObject = streamRef.current;
+      videoRef.current.play().catch(console.error);
     }
   }, [permissionGranted]);
 
@@ -154,17 +156,42 @@ export const ARPage: React.FC = () => {
           }
           const width = canvas.width;
           const height = canvas.height;
-          ctx.clearRect(0, 0, width, height);
-
           const visibleOrbs: any[] = [];
+          // Motion Blur Trail Effect
+          ctx.fillStyle = 'rgba(0, 0, 0, 0.3)';
+          ctx.fillRect(0, 0, width, height);
 
+          // Compass Strip Top
+          ctx.fillStyle = 'rgba(0, 0, 0, 0.5)';
+          ctx.fillRect(0, 0, width, 40);
+          ctx.font = 'bold 16px sans-serif';
+          ctx.textAlign = 'center';
+          ctx.textBaseline = 'middle';
+          const directions = [
+            { label: 'N', angle: 0 },
+            { label: 'E', angle: 90 },
+            { label: 'S', angle: 180 },
+            { label: 'W', angle: 270 }
+          ];
+          directions.forEach(dir => {
+            let diffDirection = dir.angle - heading;
+            if (diffDirection > 180) diffDirection -= 360;
+            if (diffDirection < -180) diffDirection += 360;
+            if (Math.abs(diffDirection) < 90) {
+              const dx = width / 2 + (diffDirection / 45) * (width / 2);
+              ctx.fillStyle = Math.abs(diffDirection) < 10 ? '#4488FF' : 'rgba(255, 255, 255, 0.7)';
+              ctx.fillText(dir.label, dx, 20);
+            }
+          });
+          
           if (!loc) {
             ctx.font = 'bold 16px sans-serif';
-            ctx.fillStyle = 'rgba(255,255,255,0.7)';
+            ctx.fillStyle = 'rgba(255, 255, 255, 0.7)';
             ctx.textAlign = 'center';
             ctx.fillText('WAITING FOR GPS SIGNAL...', width / 2, height / 2);
           } else {
             let foundAny = false;
+            
             artworks.forEach(art => {
               const dist = getDistance(loc.lat, loc.lng, art.lat, art.lng);
               const bearing = getBearing(loc.lat, loc.lng, art.lat, art.lng);
@@ -173,17 +200,39 @@ export const ARPage: React.FC = () => {
               if (diff > 180) diff -= 360;
               if (diff < -180) diff += 360;
 
-              // Only render if within 60 degrees of view
-              if (Math.abs(diff) <= 60) {
+              // Pokemon GO Culling: Only 55 degrees of forward view, and within 50 meters
+              if (Math.abs(diff) <= 55 && dist <= 50) {
                 foundAny = true;
-                const x = ((diff + 60) / 120) * width;
-                const y = height / 2;
+                
+                // Pop-in Scale Animation State
+                if (!stateRef.current.orbStates[art.id]) {
+                   stateRef.current.orbStates[art.id] = { scale: 0 };
+                }
+                stateRef.current.orbStates[art.id].scale += (1 - stateRef.current.orbStates[art.id].scale) * 0.15;
+                const popScale = stateRef.current.orbStates[art.id].scale;
 
-                // Scale: 5m = 40px, 50m = 10px
-                let r = 40 - ((dist - 5) / 45) * 30;
-                r = Math.max(10, Math.min(40, r));
+                // Horizontal translation mapping angular compass diff to screen width
+                const x = width / 2 + (diff / 55) * (width / 2);
+                
+                // Vertical translation reflecting physical constraints: 
+                // device pitch (beta) and real distance horizon
+                const pitchOffset = (beta - 90) * 15; 
+                const distanceOffset = Math.min(dist, 50) * 3;
+                const bounce = Math.sin(Date.now() / 400 + Number(art.id.charCodeAt(0))) * 12; // Continuous float
+                const y = height / 2 - pitchOffset - distanceOffset + bounce + 100;
+
+                // Absolute Scale distance sizing
+                let baseR = 40 - ((dist - 5) / 45) * 30;
+                baseR = Math.max(10, Math.min(50, baseR));
+                const r = baseR * popScale;
 
                 visibleOrbs.push({ ...art, x, y, r, dist });
+
+                // Distance fog: opacities fade over distance
+                const fogAlpha = Math.max(0.15, 1 - (dist / 50));
+                
+                // Glow intensification on proximity
+                const glowStrength = dist < 20 ? 40 : 15;
 
                 ctx.beginPath();
                 ctx.arc(x, y, r, 0, Math.PI * 2);
@@ -195,28 +244,28 @@ export const ARPage: React.FC = () => {
                 else if (art.category === 'poetry') rgb = '255, 136, 68';
                 else if (art.category === 'digital') rgb = '170, 68, 255';
 
-                ctx.fillStyle = `rgba(${rgb}, 0.8)`;
+                ctx.fillStyle = `rgba(${rgb}, ${fogAlpha * 0.8})`;
                 ctx.shadowColor = `rgba(${rgb}, 1)`;
-                ctx.shadowBlur = 20;
+                ctx.shadowBlur = glowStrength;
                 ctx.fill();
 
                 // Inner core
                 ctx.beginPath();
                 ctx.arc(x, y, r * 0.4, 0, Math.PI * 2);
-                ctx.fillStyle = 'rgba(255, 255, 255, 0.9)';
+                ctx.fillStyle = `rgba(255, 255, 255, ${fogAlpha * 0.9})`;
                 ctx.shadowBlur = 0;
                 ctx.fill();
-
-                // Text tag below
+                
+                // Distance Text tag
                 if (r > 15) {
-                  ctx.font = 'bold 12px sans-serif';
-                  ctx.fillStyle = 'white';
-                  ctx.textAlign = 'center';
-                  ctx.fillText(`${Math.round(dist)}m`, x, y + r + 20);
+                    ctx.font = 'bold 12px sans-serif';
+                    ctx.fillStyle = `rgba(255, 255, 255, ${fogAlpha})`;
+                    ctx.textAlign = 'center';
+                    ctx.fillText(`${Math.round(dist)}m`, x, y + r + 20);
                 }
               }
             });
-
+            
             // Helpful debug text
             ctx.font = '12px sans-serif';
             ctx.fillStyle = 'rgba(255,255,255,0.5)';
@@ -225,6 +274,8 @@ export const ARPage: React.FC = () => {
             ctx.fillText(`Heading: ${Math.round(heading)}°`, 20, 50);
             ctx.fillText(`Artworks Total: ${artworks.length}`, 20, 70);
             if (!foundAny && artworks.length > 0) {
+              ctx.font = '14px sans-serif';
+              ctx.fillStyle = 'rgba(255, 255, 255, 0.5)';
               ctx.textAlign = 'center';
               ctx.fillText('Look around! Move your phone.', width / 2, height / 2 + 50);
             }
@@ -257,14 +308,20 @@ export const ARPage: React.FC = () => {
 
       // Perspective Transform rendering for Placed Objects
       if (mode === 'placed' && placedOrientation && transformRef.current) {
+        let diffHeading = heading - placedOrientation.heading;
+        if (diffHeading > 180) diffHeading -= 360;
+        if (diffHeading < -180) diffHeading += 360;
+
         const dBeta = beta - placedOrientation.beta;
         const dGamma = gamma - placedOrientation.gamma;
 
-        // Rotate relative to anchor
-        const rotateX = Math.max(-90, Math.min(90, placedOrientation.beta - 90 - dBeta));
-        const rotateY = -dGamma;
+         // Fixed to actual physical deltas, mimicking a locked surface position parallax
+         // Phone turns -> artwork translates in the opposite direction horizontally and vertically
+         const translateX = -(diffHeading / 30) * (window.innerWidth / 1.5);
+         const translateY = -(dBeta / 30) * (window.innerHeight / 1.5);
 
-        transformRef.current.style.transform = `rotateX(${rotateX}deg) rotateY(${rotateY}deg) translateZ(-300px)`;
+         // Visually glued: Apply exact delta as perspective transform offset
+         transformRef.current.style.transform = `translate3d(${translateX}px, ${translateY}px, -400px) rotateX(${-dBeta}deg) rotateY(${-diffHeading}deg) rotateZ(${-dGamma}deg)`;
       }
 
       animationFrameId = requestAnimationFrame(render);
@@ -317,8 +374,8 @@ export const ARPage: React.FC = () => {
 
   const handleSurfaceTap = () => {
     if (mode === 'surface-detection') {
-      const { beta, gamma } = stateRef.current.orientation;
-      setPlacedOrientation({ beta, gamma });
+      const { heading, beta, gamma } = stateRef.current.orientation;
+      setPlacedOrientation({ heading, beta, gamma });
       setMode('placed');
     }
   };
@@ -397,31 +454,31 @@ export const ARPage: React.FC = () => {
       {mode === 'placed' && selectedArtwork && placedOrientation && (
         <div className="absolute inset-0 z-10 pointer-events-none flex items-center justify-center overflow-hidden" style={{ perspective: '800px' }}>
           <div ref={transformRef} style={{ transformStyle: 'preserve-3d' }} className="relative transition-transform ease-out duration-75 origin-center">
-            {selectedArtwork.mediaType === 'image' && (
-              <div className="relative p-2 bg-white rounded-lg shadow-[0_20px_50px_rgba(0,0,0,0.8)]">
-                <img src={selectedArtwork.mediaUrl} className="max-w-[70vw] max-h-[50vh] object-cover rounded shadow-inner" />
-              </div>
-            )}
-            {selectedArtwork.mediaType === 'video' && (
-              <div className="relative p-2 bg-black rounded-lg shadow-[0_20px_50px_rgba(0,0,0,0.8)] border-2 border-white/20">
-                <video src={selectedArtwork.mediaUrl} autoPlay loop playsInline className="max-w-[70vw] max-h-[50vh] object-cover rounded shadow-inner" />
-              </div>
-            )}
-            {selectedArtwork.mediaType === 'model3d' && (
-              <div className="relative w-[70vw] h-[50vh] max-w-[400px] max-h-[400px]">
-                {/* @ts-ignore */}
-                <model-viewer
-                  src={selectedArtwork.mediaUrl}
-                  auto-rotate
-                  camera-controls
-                  style={{ width: '100%', height: '100%', backgroundColor: 'transparent' }}
-                  rotation-per-second="45deg"
-                  interaction-prompt="none"
-                >
-                  {/* @ts-ignore */}
-                </model-viewer>
-              </div>
-            )}
+             {selectedArtwork.mediaType === 'image' && (
+               <div className="relative p-2 bg-white rounded-lg shadow-[0_20px_50px_rgba(0,0,0,0.8),0_0_20px_rgba(255,255,255,0.2)]">
+                 <img src={selectedArtwork.mediaUrl} className="max-w-[70vw] max-h-[50vh] object-cover rounded shadow-inner" />
+               </div>
+             )}
+             {selectedArtwork.mediaType === 'video' && (
+               <div className="relative p-2 bg-black rounded-lg shadow-[0_20px_50px_rgba(0,0,0,0.8),0_0_20px_rgba(255,255,255,0.2)] border-2 border-white/20">
+                 <video src={selectedArtwork.mediaUrl} autoPlay loop playsInline className="max-w-[70vw] max-h-[50vh] object-cover rounded shadow-inner" />
+               </div>
+             )}
+             {selectedArtwork.mediaType === 'model3d' && (
+               <div className="relative w-[70vw] h-[50vh] max-w-[400px] max-h-[400px]">
+                 {/* @ts-ignore */}
+                 <model-viewer
+                   src={selectedArtwork.mediaUrl}
+                   auto-rotate
+                   camera-controls
+                   style={{ width: '100%', height: '100%', backgroundColor: 'transparent' }}
+                   rotation-per-second="45deg"
+                   interaction-prompt="none"
+                 >
+                   {/* @ts-ignore */}
+                 </model-viewer>
+               </div>
+             )}
           </div>
         </div>
       )}

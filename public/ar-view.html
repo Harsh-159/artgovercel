@@ -366,6 +366,56 @@
       display: none;
       white-space: nowrap;
     }
+
+    /* ── Proximity Flash Overlay (iOS vibration fallback) ── */
+    #proximity-flash {
+      position: fixed;
+      inset: 0;
+      z-index: 9990;
+      pointer-events: none;
+      border-radius: 0;
+      opacity: 0;
+      transition: opacity 0.1s ease;
+    }
+
+    #proximity-flash.flash-50 {
+      box-shadow: inset 0 0 0 4px rgba(255, 215, 0, 0.5);
+      animation: proximityFlash50 0.6s ease forwards;
+    }
+
+    #proximity-flash.flash-20 {
+      box-shadow: inset 0 0 0 6px rgba(255, 165, 0, 0.7);
+      animation: proximityFlash20 0.8s ease forwards;
+    }
+
+    #proximity-flash.flash-5 {
+      box-shadow: inset 0 0 0 10px rgba(255, 215, 0, 0.9);
+      animation: proximityFlash5 1.0s ease forwards;
+    }
+
+    @keyframes proximityFlash50 {
+      0%   { opacity: 0; }
+      20%  { opacity: 1; }
+      100% { opacity: 0; }
+    }
+
+    @keyframes proximityFlash20 {
+      0%   { opacity: 0; }
+      15%  { opacity: 1; }
+      45%  { opacity: 0; }
+      60%  { opacity: 0.8; }
+      100% { opacity: 0; }
+    }
+
+    @keyframes proximityFlash5 {
+      0%   { opacity: 0; }
+      12%  { opacity: 1; }
+      28%  { opacity: 0; }
+      44%  { opacity: 1; }
+      60%  { opacity: 0; }
+      76%  { opacity: 1; }
+      100% { opacity: 0; }
+    }
   </style>
 </head>
 
@@ -390,6 +440,7 @@
   </div>
 
   <div id="gps-notice">📍 No GPS — showing approximate location</div>
+  <div id="proximity-flash"></div>
 
   <div id="loading-overlay" class="hidden">
     <div class="spinner"></div>
@@ -430,6 +481,71 @@
     const price = parseFloat(params.get('price') || '0');
     const appOrigin = params.get('origin') || window.location.origin;
     const FB_PROJECT = params.get('fbProject');
+
+    // ── Proximity vibration state ──────────────────────────────────────────
+    // Tracks which (artworkId + threshold) combos have already fired.
+    // Key format: `${artworkId}_${threshold}` e.g. "abc123_50"
+    const firedThresholds = new Set();
+    const THRESHOLDS = [
+      { dist: 5,  key: '5',  vibration: [80, 60, 80, 60, 80],  flashClass: 'flash-5'  },
+      { dist: 20, key: '20', vibration: [60, 50, 60],           flashClass: 'flash-20' },
+      { dist: 50, key: '50', vibration: [40],                   flashClass: 'flash-50' },
+    ];
+    const supportsVibration = typeof navigator.vibrate === 'function';
+
+    function haversineDistance(lat1, lng1, lat2, lng2) {
+      const R = 6371000;
+      const dLat = (lat2 - lat1) * Math.PI / 180;
+      const dLng = (lng2 - lng1) * Math.PI / 180;
+      const a = Math.sin(dLat / 2) ** 2 +
+                Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
+                Math.sin(dLng / 2) ** 2;
+      return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+    }
+
+    function triggerProximityAlert(flashClass, vibrationPattern) {
+      if (supportsVibration) {
+        navigator.vibrate(vibrationPattern);
+      } else {
+        // iOS visual fallback: gold screen-edge flash
+        const flash = document.getElementById('proximity-flash');
+        flash.className = '';
+        // Force reflow so re-adding class triggers animation
+        void flash.offsetWidth;
+        flash.classList.add(flashClass);
+        // Clean up class after animation completes
+        setTimeout(() => { flash.className = ''; }, 1100);
+      }
+    }
+
+    function checkProximity(userLat, userLng) {
+      if (!artLat || !artLng) return;
+
+      const dist = haversineDistance(userLat, userLng, artLat, artLng);
+
+      // Check thresholds from smallest to largest (inner takes priority)
+      for (const t of THRESHOLDS) {
+        const fireKey = artworkId + '_' + t.key;
+        const resetKey = artworkId + '_reset_' + t.key;
+        const buffer = t.dist + 10; // 10m hysteresis
+
+        if (dist <= t.dist) {
+          if (!firedThresholds.has(fireKey)) {
+            firedThresholds.add(fireKey);
+            firedThresholds.delete(resetKey); // armed for next exit
+            triggerProximityAlert(t.flashClass, t.vibration);
+          }
+        } else if (dist > buffer) {
+          // User walked back out beyond threshold + buffer — reset so it fires again on re-entry
+          if (!firedThresholds.has(resetKey)) {
+            firedThresholds.add(resetKey);
+            firedThresholds.delete(fireKey);
+          }
+        }
+      }
+    }
+    // ─────────────────────────────────────────────────────────────────────
+
 
     const isUnlocked =
       !isPaid ||
@@ -649,11 +765,12 @@
             const acc = Math.round(pos.coords.accuracy);
             document.getElementById('gps-text').textContent = '±' + acc + 'm';
             if (!gpsReady) {
-              // First position received — GPS is working, unblock immediately
               gpsReady = true;
               document.getElementById('gps-dot').classList.add('ready');
               hideLoadingOverlay();
             }
+            // ── Proximity vibration check on every GPS update ──
+            checkProximity(pos.coords.latitude, pos.coords.longitude);
           },
           (err) => {
             console.error('GPS error:', err.code, err.message);

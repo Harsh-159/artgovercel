@@ -7,6 +7,7 @@ import { Orb } from '../components/Orb';
 import { LikeButton } from '../components/LikeButton';
 import { Navigation } from '../components/Navigation';
 import { clsx } from 'clsx';
+import { getLocationFast, locateNow } from '../lib/geolocation';
 import 'mapbox-gl/dist/mapbox-gl.css';
 
 const MAPBOX_TOKEN = import.meta.env.VITE_MAPBOX_TOKEN || 'pk.eyJ1IjoiaGFyc2h5YWRhdmhhcHB5IiwiYSI6ImNsczB2b252MDBhN2Qya21zZ254Z254Z24ifQ.demo';
@@ -15,11 +16,7 @@ export const MapPage: React.FC = () => {
   const [artworks, setArtworks] = useState<Artwork[]>([]);
   const [selectedArtwork, setSelectedArtwork] = useState<Artwork | null>(null);
   const [locationFetched, setLocationFetched] = useState(false);
-  const [viewState, setViewState] = useState({
-    longitude: 0.1218,
-    latitude: 52.2053,
-    zoom: 14
-  });
+  const [viewState, setViewState] = useState<{ longitude: number; latitude: number; zoom: number } | null>(null);
   const navigate = useNavigate();
 
   const [userLocation, setUserLocation] = useState<{ lat: number, lng: number } | null>(null);
@@ -28,30 +25,21 @@ export const MapPage: React.FC = () => {
   useEffect(() => {
     const unsubscribe = getArtworks(setArtworks);
 
-    // Get user location
-    if (navigator.geolocation) {
-      navigator.geolocation.getCurrentPosition(
-        (pos) => {
-          setUserLocation({ lat: pos.coords.latitude, lng: pos.coords.longitude });
-          setViewState(prev => ({
-            ...prev,
-            longitude: pos.coords.longitude,
-            latitude: pos.coords.latitude,
-            zoom: 15
-          }));
-          setLocationFetched(true);
-        },
-        (err) => {
-          console.error(err);
-          setLocationFetched(true); // fallback to Cambridge if denied
-        },
-        { enableHighAccuracy: true, timeout: 5000, maximumAge: 30000 }
-      );
-    } else {
-      setLocationFetched(true); // if no geolocation supported
-    }
+    // Two-tier location: IP geo (instant) then GPS (accurate)
+    const stopWatching = getLocationFast(
+      ({ lat, lng }) => {
+        setUserLocation({ lat, lng });
+        setViewState({ longitude: lng, latitude: lat, zoom: 15 });
+        setLocationFetched(true);
+      },
+      () => {
+        // Location denied/unavailable — show map at a generic default
+        setViewState({ longitude: 0, latitude: 20, zoom: 2 });
+        setLocationFetched(true);
+      }
+    );
 
-    return () => unsubscribe();
+    return () => { unsubscribe(); stopWatching(); };
   }, []);
 
   useEffect(() => {
@@ -107,26 +95,13 @@ export const MapPage: React.FC = () => {
         <div className="flex gap-2 items-center pointer-events-auto">
           <button
             onClick={() => {
-              if (navigator.geolocation) {
-                navigator.geolocation.getCurrentPosition(
-                  (pos) => {
-                    setUserLocation({ lat: pos.coords.latitude, lng: pos.coords.longitude });
-                    setViewState(prev => ({
-                      ...prev,
-                      longitude: pos.coords.longitude,
-                      latitude: pos.coords.latitude,
-                      zoom: 15
-                    }));
-                  },
-                  (err) => {
-                    console.error("Locate Me error:", err);
-                    alert("Could not get your location.");
-                  },
-                  { enableHighAccuracy: true, timeout: 5000, maximumAge: 10000 }
-                );
-              } else {
-                alert("Geolocation is not supported by your browser.");
-              }
+              locateNow(
+                ({ lat, lng }) => {
+                  setUserLocation({ lat, lng });
+                  setViewState({ longitude: lng, latitude: lat, zoom: 15 });
+                },
+                (err) => alert(`Could not get your location: ${err}`)
+              );
             }}
             className="bg-white/10 hover:bg-white/20 backdrop-blur-md rounded-full px-4 h-10 flex items-center gap-2 text-white font-bold transition-all border border-white/10"
           >
@@ -142,7 +117,7 @@ export const MapPage: React.FC = () => {
       {/* Map */}
       <Map
         ref={mapRef}
-        {...viewState}
+        {...(viewState ?? { longitude: 0, latitude: 20, zoom: 2 })}
         onMove={evt => setViewState(evt.viewState)}
         onClick={e => {
           // ensure we don't trigger when clicking a marker

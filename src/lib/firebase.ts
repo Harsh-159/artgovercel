@@ -1,6 +1,6 @@
 import { initializeApp } from 'firebase/app';
 import { getFirestore, collection, onSnapshot, doc, getDoc, getDocs, setDoc, addDoc, updateDoc, increment, query, where } from 'firebase/firestore';
-import { getAuth, signInWithPopup, getRedirectResult, GoogleAuthProvider, signOut as firebaseSignOut } from 'firebase/auth';
+import { getAuth, signInWithRedirect, getRedirectResult, GoogleAuthProvider, signOut as firebaseSignOut } from 'firebase/auth';
 import { getStorage } from 'firebase/storage';
 import { Artwork } from './types';
 
@@ -150,14 +150,27 @@ export const incrementLikes = async (id: string) => {
   await updateDoc(doc(db!, 'artworks', id), { likes: increment(1) });
 };
 
+/**
+ * Initiates Google sign-in via redirect (works on all browsers + Vercel domains).
+ * IMPORTANT: Add your Vercel domain to Firebase Console → Authentication → Authorized Domains.
+ * After redirect, call handleRedirectResult() on page load to complete sign-in.
+ */
 export const signInWithGoogle = async () => {
   if (isDemo) return { user: { displayName: "Demo User", uid: "demo-user" } };
   const provider = new GoogleAuthProvider();
+  provider.setCustomParameters({ prompt: 'select_account' });
   try {
-    const result = await signInWithPopup(auth!, provider);
-    return result;
-  } catch (error) {
-    console.error('Sign in error:', error);
+    await signInWithRedirect(auth!, provider);
+  } catch (error: any) {
+    console.error('Sign in redirect error:', error);
+    // auth/unauthorized-domain means you need to add this domain in Firebase Console
+    if (error.code === 'auth/unauthorized-domain') {
+      throw new Error(
+        'This domain is not authorized for Firebase Auth. ' +
+        'Go to Firebase Console → Authentication → Authorized Domains and add: ' +
+        window.location.hostname
+      );
+    }
     throw error;
   }
 };
@@ -176,8 +189,15 @@ export const handleRedirectResult = async () => {
   try {
     const result = await getRedirectResult(auth!);
     return result;
-  } catch (error) {
+  } catch (error: any) {
     console.error('Redirect result error:', error);
+    if (error.code === 'auth/unauthorized-domain') {
+      console.error(
+        '⚠️ Firebase Auth: Unauthorized domain. Add "' +
+        window.location.hostname +
+        '" to Firebase Console → Authentication → Authorized Domains'
+      );
+    }
     return null;
   }
 };

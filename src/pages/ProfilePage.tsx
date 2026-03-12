@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { collection, query, where, onSnapshot } from 'firebase/firestore';
-import { db, auth, signInWithGoogle, signOutUser } from '../lib/firebase';
+import { db, auth, signInWithGoogle, signOutUser, handleRedirectResult } from '../lib/firebase';
 import { Artwork } from '../lib/types';
 import { Navigation } from '../components/Navigation';
 import { Lock, MapPin, Heart, Coins, LogOut, Image, Award, ChevronRight } from 'lucide-react';
@@ -23,6 +23,11 @@ export const ProfilePage: React.FC = () => {
     }, []);
 
     useEffect(() => {
+        // Complete Google redirect sign-in if returning from Google auth
+        handleRedirectResult().then(result => {
+            if (result?.user) setCurrentUser(result.user as any);
+        });
+
         const unsubAuth = auth?.onAuthStateChanged(user => {
             setCurrentUser(user);
         });

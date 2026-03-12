@@ -9,6 +9,7 @@ import { clsx } from 'clsx';
 import { Navigation } from '../components/Navigation';
 import { VoiceRecorder } from '../components/VoiceRecorder';
 import { ModelPreview } from '../components/ModelPreview';
+import { getLocationFast, locateNow } from '../lib/geolocation';
 
 const MAPBOX_TOKEN = import.meta.env.VITE_MAPBOX_TOKEN || 'pk.eyJ1IjoiaGFyc2h5YWRhdmhhcHB5IiwiYSI6ImNsczB2b252MDBhN2Qya21zZ254Z254Z24ifQ.demo';
 
@@ -88,24 +89,17 @@ export const UploadPage: React.FC = () => {
     }
 
     if (navigator.geolocation && !state) {
-      navigator.geolocation.getCurrentPosition(
-        (pos) => {
-          setUserLocation({ lat: pos.coords.latitude, lng: pos.coords.longitude });
-          setViewState({
-            longitude: pos.coords.longitude,
-            latitude: pos.coords.latitude,
-            zoom: 15
-          });
+      const stopWatching = getLocationFast(
+        ({ lat, lng }) => {
+          setUserLocation({ lat, lng });
+          setViewState({ longitude: lng, latitude: lat, zoom: 15 });
           setLocationFetched(true);
         },
-        (err) => {
-          console.error(err);
-          setLocationFetched(true); // fallback
-        },
-        { enableHighAccuracy: true, timeout: 5000, maximumAge: 30000 }
+        () => setLocationFetched(true)
       );
+      return () => { unsubAuth?.(); stopWatching(); };
     } else {
-      setLocationFetched(true); // fallback or already have state
+      setLocationFetched(true);
     }
 
     return () => unsubAuth?.();
@@ -483,18 +477,13 @@ export const UploadPage: React.FC = () => {
               type="button"
               onClick={() => {
                 if (navigator.geolocation) {
-                  navigator.geolocation.getCurrentPosition(
-                    (pos) => {
-                      setUserLocation({ lat: pos.coords.latitude, lng: pos.coords.longitude });
-                      setViewState({
-                        longitude: pos.coords.longitude,
-                        latitude: pos.coords.latitude,
-                        zoom: 15
-                      });
-                      setLocation({ lat: pos.coords.latitude, lng: pos.coords.longitude });
+                  locateNow(
+                    ({ lat, lng }) => {
+                      setUserLocation({ lat, lng });
+                      setViewState({ longitude: lng, latitude: lat, zoom: 15 });
+                      setLocation({ lat, lng });
                     },
-                    (err) => console.error('Locate Me error:', err),
-                    { enableHighAccuracy: true, timeout: 5000, maximumAge: 10000 }
+                    (err) => console.error('Locate Me error:', err)
                   );
                 }
               }}

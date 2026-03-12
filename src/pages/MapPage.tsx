@@ -45,7 +45,7 @@ export const MapPage: React.FC = () => {
           console.error(err);
           setLocationFetched(true); // fallback to Cambridge if denied
         },
-        { timeout: 5000, maximumAge: 0 }
+        { enableHighAccuracy: true, timeout: 5000, maximumAge: 30000 }
       );
     } else {
       setLocationFetched(true); // if no geolocation supported
@@ -121,7 +121,8 @@ export const MapPage: React.FC = () => {
                   (err) => {
                     console.error("Locate Me error:", err);
                     alert("Could not get your location.");
-                  }
+                  },
+                  { enableHighAccuracy: true, timeout: 5000, maximumAge: 10000 }
                 );
               } else {
                 alert("Geolocation is not supported by your browser.");

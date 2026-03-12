@@ -102,7 +102,7 @@ export const UploadPage: React.FC = () => {
           console.error(err);
           setLocationFetched(true); // fallback
         },
-        { timeout: 5000, maximumAge: 0 }
+        { enableHighAccuracy: true, timeout: 5000, maximumAge: 30000 }
       );
     } else {
       setLocationFetched(true); // fallback or already have state
@@ -492,7 +492,9 @@ export const UploadPage: React.FC = () => {
                         zoom: 15
                       });
                       setLocation({ lat: pos.coords.latitude, lng: pos.coords.longitude });
-                    }
+                    },
+                    (err) => console.error('Locate Me error:', err),
+                    { enableHighAccuracy: true, timeout: 5000, maximumAge: 10000 }
                   );
                 }
               }}

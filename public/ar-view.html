@@ -728,14 +728,10 @@
 
         if (mediaType === 'image') {
           entityMarkup = `
-            <a-assets timeout="60000">
-              <img id="arImg" src="${mediaUrl}" crossorigin="anonymous">
-            </a-assets>
             <a-image
-              src="#arImg"
+              id="art-image"
               gps-projected-entity-place="${gpsAttr}"
               look-at="[gps-projected-camera]"
-              scale="5 5 1"
               material="transparent: true; alphaTest: 0.1; side: double">
             </a-image>`;
 
@@ -845,6 +841,43 @@
         if (!window.__arVideoObserver) {
           window.__arVideoObserver = new MutationObserver(() => applyVideoStyles());
           window.__arVideoObserver.observe(document.body, { childList: true, subtree: true });
+        }
+
+        // For large images: downscale client-side to a GPU-friendly size
+        // and set a consistent world-space size so the artwork stays visible.
+        if (mediaType === 'image' && mediaUrl) {
+          const MAX_DIMENSION = 2048; // clamp largest side in pixels
+          const img = new Image();
+          img.crossOrigin = 'anonymous';
+          img.onload = () => {
+            let { width, height } = img;
+            if (!width || !height) return;
+
+            let scale = 1;
+            const largestSide = Math.max(width, height);
+            if (largestSide > MAX_DIMENSION) {
+              scale = MAX_DIMENSION / largestSide;
+            }
+
+            const canvas = document.createElement('canvas');
+            canvas.width = Math.round(width * scale);
+            canvas.height = Math.round(height * scale);
+            const ctx = canvas.getContext('2d');
+            if (!ctx) return;
+            ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+
+            const dataUrl = canvas.toDataURL('image/jpeg', 0.9);
+            const artImageEl = document.querySelector('#art-image');
+            if (artImageEl) {
+              // Maintain aspect ratio but keep a reasonable physical size.
+              const aspect = canvas.width / canvas.height || 1;
+              const baseHeight = 3; // world units
+              artImageEl.setAttribute('height', String(baseHeight));
+              artImageEl.setAttribute('width', String(baseHeight * aspect));
+              artImageEl.setAttribute('src', dataUrl);
+            }
+          };
+          img.src = mediaUrl;
         }
       }, 0);
 

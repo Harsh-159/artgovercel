@@ -3,23 +3,34 @@
 
 <head>
   <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1, 
-          user-scalable=no" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no" />
   <meta name="mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <title>GalleryOS AR</title>
 
-  <!-- 
-    CRITICAL LOADING ORDER:
-    A-Frame must be fully loaded before AR.js.
-    Both must be loaded before any scene HTML is parsed.
-    Synchronous script tags in <head> guarantee this order.
+  <!--
+    LOADING ORDER IS CRITICAL — do not reorder these three blocks.
+    Block 1: A-Frame loads Three.js into window.THREE
   -->
   <script src="https://aframe.io/releases/1.4.0/aframe.min.js"></script>
+
+  <!--
+    Block 2: THREE.Math compatibility patch.
+    A-Frame 1.4.0 ships Three.js r148 where THREE.Math was REMOVED.
+    AR.js 3.4.x still calls THREE.Math.degToRad which throws and
+    silently breaks ALL entity placement — no pins show, scene breaks.
+    This restores the alias. Must run after A-Frame, before AR.js.
+  -->
+  <script>
+    if (window.THREE && window.THREE.MathUtils && !window.THREE.Math) {
+      window.THREE.Math = window.THREE.MathUtils;
+    }
+  </script>
+
+  <!-- Block 3: AR.js after patch -->
   <script src="https://cdn.jsdelivr.net/gh/AR-js-org/AR.js@3.4.2/aframe/build/aframe-ar.js"></script>
 
   <style>
-    /* FIX 3: @import must be FIRST in a style block */
     @import url('https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=DM+Sans:wght@400;600;700&display=swap');
 
     * {
@@ -33,21 +44,8 @@
       width: 100%;
       height: 100%;
       overflow: hidden;
-      /* FIX 2 SUPPORT: body must be transparent so the AR.js video
-         element (z-index: -1) is visible behind the canvas */
       background: transparent;
     }
-
-    /* Dark fallback strictly behind AR.js video (z-index: -1) */
-    #bg-fill {
-      position: fixed;
-      inset: 0;
-      background: #000;
-      z-index: -3;
-    }
-
-    /* FIX 4: Without 'embedded', A-Frame owns the full page correctly.
-       We only need to ensure UI overlays sit above it. */
 
     #back-btn {
       position: fixed;
@@ -64,9 +62,55 @@
       font-size: 14px;
       font-family: 'DM Sans', sans-serif;
       cursor: pointer;
+    }
+
+    #gps-status {
+      position: fixed;
+      top: env(safe-area-inset-top, 16px);
+      right: 16px;
+      z-index: 9999;
+      background: rgba(0, 0, 0, 0.6);
+      backdrop-filter: blur(10px);
+      -webkit-backdrop-filter: blur(10px);
+      border: 1px solid rgba(255, 255, 255, 0.15);
+      color: white;
+      border-radius: 50px;
+      padding: 8px 12px;
+      font-size: 12px;
+      font-family: monospace;
       display: flex;
       align-items: center;
       gap: 6px;
+    }
+
+    .gps-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: #FF4444;
+      animation: gpsFlash 1s infinite;
+    }
+
+    .gps-dot.ready {
+      background: #44FF88;
+      animation: none;
+    }
+
+    .gps-dot.warning {
+      background: #FFD700;
+      animation: none;
+    }
+
+    @keyframes gpsFlash {
+
+      0%,
+      100% {
+        opacity: 1
+      }
+
+      50% {
+        opacity: 0.2
+      }
     }
 
     #info-bar {
@@ -75,7 +119,7 @@
       left: 0;
       right: 0;
       z-index: 9999;
-      background: rgba(0, 0, 0, 0.6);
+      background: rgba(0, 0, 0, 0.65);
       backdrop-filter: blur(20px);
       -webkit-backdrop-filter: blur(20px);
       border-top: 1px solid rgba(255, 255, 255, 0.1);
@@ -119,55 +163,79 @@
       border-color: rgba(255, 60, 60, 0.5);
     }
 
-    #gps-status {
+    #start-overlay {
       position: fixed;
-      top: env(safe-area-inset-top, 16px);
-      right: 16px;
-      z-index: 9999;
-      background: rgba(0, 0, 0, 0.6);
-      backdrop-filter: blur(10px);
-      -webkit-backdrop-filter: blur(10px);
-      border: 1px solid rgba(255, 255, 255, 0.15);
-      color: white;
-      border-radius: 50px;
-      padding: 8px 12px;
-      font-size: 12px;
-      font-family: monospace;
+      inset: 0;
+      z-index: 10000;
+      background: #0A0A0F;
       display: flex;
+      flex-direction: column;
       align-items: center;
-      gap: 6px;
+      justify-content: center;
+      gap: 20px;
+      padding: 32px;
+      text-align: center;
     }
 
-    .gps-dot {
-      width: 8px;
-      height: 8px;
-      border-radius: 50%;
-      background: #FF4444;
-      animation: gpsFlash 1s infinite;
+    #start-overlay.hidden {
+      display: none;
     }
 
-    .gps-dot.ready {
-      background: #44FF88;
-      animation: none;
+    .start-emoji {
+      font-size: 64px;
     }
 
-    @keyframes gpsFlash {
+    .start-title {
+      color: #F0F0FF;
+      font-family: 'Space Mono', monospace;
+      font-size: 22px;
+      font-weight: bold;
+    }
 
-      0%,
-      100% {
-        opacity: 1;
-      }
+    .start-artwork-name {
+      color: #4488FF;
+      font-family: 'Space Mono', monospace;
+      font-size: 15px;
+    }
 
-      50% {
-        opacity: 0.2;
-      }
+    .start-sub {
+      color: #8888AA;
+      font-family: 'DM Sans', sans-serif;
+      font-size: 14px;
+      max-width: 280px;
+      line-height: 1.6;
+    }
+
+    .start-btn {
+      background: #4488FF;
+      color: white;
+      border: none;
+      border-radius: 50px;
+      padding: 16px 36px;
+      font-size: 16px;
+      font-family: 'DM Sans', sans-serif;
+      font-weight: 700;
+      cursor: pointer;
+      box-shadow: 0 0 30px rgba(68, 136, 255, 0.5);
+      width: 100%;
+      max-width: 280px;
+    }
+
+    .back-link {
+      color: #8888AA;
+      font-family: 'DM Sans', sans-serif;
+      font-size: 14px;
+      cursor: pointer;
+      text-decoration: underline;
+      background: none;
+      border: none;
     }
 
     #loading-overlay {
       position: fixed;
       inset: 0;
       z-index: 9998;
-      background: rgba(10, 10, 15, 0.85);
+      background: rgba(10, 10, 15, 0.8);
       display: flex;
       flex-direction: column;
       align-items: center;
@@ -181,60 +249,9 @@
       pointer-events: none;
     }
 
-    #start-overlay {
-      position: fixed;
-      inset: 0;
-      z-index: 10000;
-      background: rgba(10, 10, 15, 0.97);
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      justify-content: center;
-      gap: 20px;
-      padding: 32px;
-      text-align: center;
-      transition: opacity 0.3s ease;
-    }
-
-    #start-overlay.hidden {
-      opacity: 0;
-      pointer-events: none;
-    }
-
-    .start-btn {
-      background: #4488FF;
-      color: white;
-      border: none;
-      border-radius: 50px;
-      padding: 16px 32px;
-      font-size: 16px;
-      font-family: 'DM Sans', sans-serif;
-      font-weight: 700;
-      cursor: pointer;
-      box-shadow: 0 0 30px rgba(68, 136, 255, 0.4);
-      width: 100%;
-      max-width: 280px;
-      margin-top: 10px;
-    }
-
-    .start-title {
-      color: #F0F0FF;
-      font-family: 'Space Mono', monospace;
-      font-size: 24px;
-      font-weight: bold;
-    }
-
-    .start-sub {
-      color: #8888AA;
-      font-family: 'DM Sans', sans-serif;
-      font-size: 14px;
-      max-width: 300px;
-      line-height: 1.5;
-    }
-
     .spinner {
-      width: 40px;
-      height: 40px;
+      width: 44px;
+      height: 44px;
       border: 3px solid rgba(68, 136, 255, 0.2);
       border-top-color: #4488FF;
       border-radius: 50%;
@@ -266,7 +283,7 @@
       position: fixed;
       inset: 0;
       z-index: 9997;
-      background: rgba(10, 10, 15, 0.92);
+      background: rgba(10, 10, 15, 0.93);
       backdrop-filter: blur(20px);
       -webkit-backdrop-filter: blur(20px);
       display: flex;
@@ -291,11 +308,11 @@
 
       0%,
       100% {
-        transform: scale(1);
+        transform: scale(1)
       }
 
       50% {
-        transform: scale(1.1);
+        transform: scale(1.1)
       }
     }
 
@@ -331,33 +348,36 @@
       max-width: 280px;
     }
 
-    .back-link {
-      color: #8888AA;
+    #gps-notice {
+      position: fixed;
+      bottom: 90px;
+      left: 50%;
+      transform: translateX(-50%);
+      z-index: 9999;
+      background: rgba(255, 180, 0, 0.15);
+      border: 1px solid rgba(255, 180, 0, 0.4);
+      color: #FFD700;
+      border-radius: 12px;
+      padding: 10px 16px;
       font-family: 'DM Sans', sans-serif;
-      font-size: 14px;
-      cursor: pointer;
-      text-decoration: underline;
-      background: none;
-      border: none;
+      font-size: 13px;
+      text-align: center;
+      max-width: 280px;
+      display: none;
+      white-space: nowrap;
     }
   </style>
 </head>
 
 <body>
 
-  <!-- Dark fallback behind camera feed -->
-  <div id="bg-fill"></div>
-
-  <!-- Back button -->
   <button id="back-btn" onclick="goBack()">← Back</button>
 
-  <!-- GPS accuracy indicator -->
   <div id="gps-status">
     <div class="gps-dot" id="gps-dot"></div>
     <span id="gps-text">Locating...</span>
   </div>
 
-  <!-- Bottom info bar -->
   <div id="info-bar">
     <div>
       <div id="artwork-title">Loading...</div>
@@ -369,73 +389,64 @@
     </button>
   </div>
 
-  <!-- Loading overlay — hidden by default, shown during GPS wait -->
+  <div id="gps-notice">📍 No GPS — showing approximate location</div>
+
   <div id="loading-overlay" class="hidden">
     <div class="spinner"></div>
     <div class="loading-text">Acquiring GPS</div>
-    <div class="loading-sub" id="loading-sub-text">Waiting for location signal...</div>
+    <div class="loading-sub" id="loading-sub-text">Move outdoors for best results</div>
   </div>
 
-  <!-- Start overlay — shown first to capture user gesture for permissions -->
   <div id="start-overlay">
-    <div style="font-size: 56px; margin-bottom: 8px;">🌍</div>
+    <div class="start-emoji">🌍</div>
     <div class="start-title">GalleryOS AR</div>
+    <div class="start-artwork-name" id="start-artwork-name"></div>
     <div class="start-sub">
-      Tap below to open your camera and experience art anchored in the real world.
+      Tap below to open your camera.<br>
+      Art will appear anchored in the real world.
     </div>
     <button class="start-btn" onclick="startAR()">Open AR Experience</button>
-    <button class="back-link" onclick="goBack()" style="margin-top: 10px;">Return to Map</button>
+    <button class="back-link" onclick="goBack()" style="margin-top:8px">Return to Map</button>
   </div>
 
-  <!-- Unlock overlay for paid content -->
   <div id="unlock-overlay" class="hidden">
     <div class="lock-icon">🔒</div>
     <div class="unlock-title" id="unlock-title">Locked Artwork</div>
     <div class="unlock-price" id="unlock-price">£0.99</div>
     <button class="unlock-btn" onclick="goToUnlock()">Unlock & View Forever</button>
-    <button class="back-link" onclick="goBack()">Maybe later</button>
-  </div>
-
-  <!-- Scene container: A-Frame scene injected here after user gesture -->
-  <!-- FIX 4: No 'embedded' attribute — A-Frame takes full page ownership -->
-  <div id="scene-container" style="position: fixed; inset: 0; z-index: 0; pointer-events: auto;">
+    <button class="back-link" style="margin-top:8px" onclick="goBack()">Maybe later</button>
   </div>
 
   <script>
-    // ── URL params ───────────────────────────────────────────────────
     const params = new URLSearchParams(window.location.search);
     const artworkId = params.get('id');
     const mediaUrl = decodeURIComponent(params.get('mediaUrl') || '');
     const mediaType = params.get('mediaType');
-    const lat = parseFloat(params.get('lat') || '0');
-    const lng = parseFloat(params.get('lng') || '0');
+    const artLat = parseFloat(params.get('lat') || '0');
+    const artLng = parseFloat(params.get('lng') || '0');
     const title = params.get('title') || 'Untitled';
     const artistName = params.get('artistName') || '';
     const isPaid = params.get('isPaid') === 'true';
     const price = parseFloat(params.get('price') || '0');
     const appOrigin = params.get('origin') || window.location.origin;
-    const FIREBASE_PROJECT = params.get('fbProject');
+    const FB_PROJECT = params.get('fbProject');
 
-    // ── Unlock check ─────────────────────────────────────────────────
     const isUnlocked =
       !isPaid ||
       localStorage.getItem('unlocked_' + artworkId) === 'true' ||
       sessionStorage.getItem('viewonce_' + artworkId) === 'true' ||
       params.get('unlocked') === 'true';
 
-    // ── Populate UI ──────────────────────────────────────────────────
     document.getElementById('artwork-title').textContent = title;
-    document.getElementById('artist-name').textContent =
-      artistName ? 'by ' + artistName : '';
+    document.getElementById('artist-name').textContent = artistName ? 'by ' + artistName : '';
+    document.getElementById('start-artwork-name').textContent = title;
 
     if (!isUnlocked) {
       document.getElementById('unlock-overlay').classList.remove('hidden');
       document.getElementById('unlock-title').textContent = title;
-      document.getElementById('unlock-price').textContent =
-        '£' + price.toFixed(2);
+      document.getElementById('unlock-price').textContent = '£' + price.toFixed(2);
     }
 
-    // ── Navigation ───────────────────────────────────────────────────
     function goBack() {
       if (document.referrer && document.referrer !== window.location.href) {
         window.history.back();
@@ -448,13 +459,10 @@
       window.location.href = appOrigin + '/ar/' + artworkId;
     }
 
-    // ── Like button ──────────────────────────────────────────────────
     let likeCount = parseInt(params.get('likes') || '0');
     let hasLiked = false;
-
     try {
-      const likedList = JSON.parse(localStorage.getItem('liked_artworks') || '[]');
-      hasLiked = likedList.includes(artworkId);
+      hasLiked = JSON.parse(localStorage.getItem('liked_artworks') || '[]').includes(artworkId);
     } catch (e) { }
 
     document.getElementById('like-count').textContent = likeCount;
@@ -473,17 +481,14 @@
       const btn = document.getElementById('like-btn');
       btn.style.transform = 'scale(1.3)';
       setTimeout(() => { btn.style.transform = 'scale(1)'; }, 200);
-
       try {
-        const likedList = JSON.parse(localStorage.getItem('liked_artworks') || '[]');
-        likedList.push(artworkId);
-        localStorage.setItem('liked_artworks', JSON.stringify(likedList));
+        const list = JSON.parse(localStorage.getItem('liked_artworks') || '[]');
+        list.push(artworkId);
+        localStorage.setItem('liked_artworks', JSON.stringify(list));
       } catch (e) { }
-
-      if (FIREBASE_PROJECT) {
+      if (FB_PROJECT) {
         fetch(
-          'https://firestore.googleapis.com/v1/projects/' +
-          FIREBASE_PROJECT +
+          'https://firestore.googleapis.com/v1/projects/' + FB_PROJECT +
           '/databases/(default)/documents/artworks/' + artworkId +
           '?updateMask.fieldPaths=likes',
           {
@@ -491,16 +496,16 @@
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ fields: { likes: { integerValue: likeCount } } })
           }
-        ).catch(e => console.error('Like update failed:', e));
+        ).catch(e => console.error('Like failed:', e));
       }
     }
 
-    // ── Start AR (called from button tap — REQUIRED for permissions) ──
     async function startAR() {
-      // FIX 1: Declare gpsReady HERE so it's in scope for all callbacks below
+      // CRITICAL: gpsReady declared here so it's in scope for all
+      // callbacks — previously undeclared causing ReferenceError crash
       let gpsReady = false;
 
-      // Request DeviceOrientation permission on iOS 13+
+      // iOS 13+ motion permission (Android ignores this safely)
       if (
         typeof DeviceOrientationEvent !== 'undefined' &&
         typeof DeviceOrientationEvent.requestPermission === 'function'
@@ -508,24 +513,22 @@
         try {
           const state = await DeviceOrientationEvent.requestPermission();
           if (state !== 'granted') {
-            alert('Motion access is required for AR to work correctly.');
+            alert('Motion permission required for AR.');
             return;
           }
         } catch (e) {
-          console.error('DeviceOrientation permission error:', e);
-          // Continue anyway on Android where this API doesn't exist
+          console.error('Orientation permission:', e);
         }
       }
 
-      // Hide start overlay, show loading
       document.getElementById('start-overlay').classList.add('hidden');
       document.getElementById('loading-overlay').classList.remove('hidden');
 
-      // Build entity markup
+      // Build entity HTML
       let entityMarkup = '';
 
-      if (isUnlocked && mediaUrl && lat && lng) {
-        const gpsAttr = 'latitude: ' + lat + '; longitude: ' + lng;
+      if (isUnlocked && mediaUrl && artLat && artLng) {
+        const gpsAttr = 'latitude: ' + artLat + '; longitude: ' + artLng;
 
         if (mediaType === 'image') {
           entityMarkup = `
@@ -538,17 +541,13 @@
               look-at="[gps-projected-camera]"
               scale="10 10 1"
               material="transparent: true; alphaTest: 0.1; side: double"
-              animation="property: scale; from: 9.5 9.5 1; to: 10 10 1;
-                         dir: alternate; dur: 2000; loop: true; easing: easeInOutSine">
-            </a-image>
-          `;
+              animation="property: scale; from: 9.5 9.5 1; to: 10 10 1; dir: alternate; dur: 2000; loop: true; easing: easeInOutSine">
+            </a-image>`;
+
         } else if (mediaType === 'video') {
           entityMarkup = `
             <a-assets timeout="10000">
-              <video id="arVideo" src="${mediaUrl}"
-                autoplay loop crossorigin="anonymous"
-                playsinline webkit-playsinline muted>
-              </video>
+              <video id="arVideo" src="${mediaUrl}" autoplay loop crossorigin="anonymous" playsinline webkit-playsinline muted></video>
             </a-assets>
             <a-video
               src="#arVideo"
@@ -556,10 +555,9 @@
               look-at="[gps-projected-camera]"
               width="16" height="9"
               material="side: double">
-            </a-video>
-          `;
+            </a-video>`;
+
         } else if (mediaType === 'audio' || mediaType === 'voice') {
-          // Native audio element for guaranteed playback
           const audio = document.createElement('audio');
           audio.src = mediaUrl;
           audio.autoplay = true;
@@ -567,91 +565,91 @@
           document.body.appendChild(audio);
 
           entityMarkup = `
-            <a-entity
-              gps-projected-entity-place="${gpsAttr}"
-              look-at="[gps-projected-camera]">
-              <a-box color="#FF6B9D" position="-0.6 0 0" width="0.2" height="1" depth="0.2"
-                animation="property: scale; from: 1 0.5 1; to: 1 2 1; dir: alternate; dur: 400; loop: true; easing: easeInOutSine">
-              </a-box>
-              <a-box color="#4488FF" position="-0.2 0 0" width="0.2" height="1" depth="0.2"
-                animation="property: scale; from: 1 1.5 1; to: 1 0.3 1; dir: alternate; dur: 600; loop: true; easing: easeInOutSine">
-              </a-box>
-              <a-box color="#FFD700" position="0.2 0 0" width="0.2" height="1" depth="0.2"
-                animation="property: scale; from: 1 0.8 1; to: 1 1.8 1; dir: alternate; dur: 500; loop: true; easing: easeInOutSine">
-              </a-box>
-              <a-box color="#44FF88" position="0.6 0 0" width="0.2" height="1" depth="0.2"
-                animation="property: scale; from: 1 1.2 1; to: 1 0.4 1; dir: alternate; dur: 450; loop: true; easing: easeInOutSine">
-              </a-box>
-            </a-entity>
-          `;
+            <a-entity gps-projected-entity-place="${gpsAttr}" look-at="[gps-projected-camera]">
+              <a-box color="#FF6B9D" position="-0.6 0 0" width="0.2" height="1" depth="0.2" animation="property: scale; from: 1 0.5 1; to: 1 2 1; dir: alternate; dur: 400; loop: true; easing: easeInOutSine"></a-box>
+              <a-box color="#4488FF" position="-0.2 0 0" width="0.2" height="1" depth="0.2" animation="property: scale; from: 1 1.5 1; to: 1 0.3 1; dir: alternate; dur: 600; loop: true; easing: easeInOutSine"></a-box>
+              <a-box color="#FFD700" position="0.2 0 0" width="0.2" height="1" depth="0.2" animation="property: scale; from: 1 0.8 1; to: 1 1.8 1; dir: alternate; dur: 500; loop: true; easing: easeInOutSine"></a-box>
+              <a-box color="#44FF88" position="0.6 0 0" width="0.2" height="1" depth="0.2" animation="property: scale; from: 1 1.2 1; to: 1 0.4 1; dir: alternate; dur: 450; loop: true; easing: easeInOutSine"></a-box>
+            </a-entity>`;
+
         } else if (mediaType === 'model3d') {
           entityMarkup = `
             <a-entity
               gltf-model="${mediaUrl}"
               gps-projected-entity-place="${gpsAttr}"
               scale="2 2 2"
-              animation="property: rotation; from: 0 0 0; to: 0 360 0;
-                         loop: true; dur: 8000; easing: linear">
-            </a-entity>
-          `;
+              animation="property: rotation; from: 0 0 0; to: 0 360 0; loop: true; dur: 8000; easing: linear">
+            </a-entity>`;
         }
       }
 
-      // FIX 2: videoTexture: false — uses a real <video> DOM element
-      // behind the canvas instead of a WebGL texture.
-      // This is far more reliable on Android Chrome.
-      // FIX 4: No 'embedded' attribute so A-Frame owns the full viewport.
-      const sceneHtml = `
+      /*
+        CRITICAL FIX: Inject <a-scene> as first child of <body>, NOT
+        inside a wrapper div. A-Frame must own <body> to correctly
+        size its canvas to 100vw/100vh on mobile.
+
+        CRITICAL FIX: videoTexture: false — AR.js renders camera as a
+        real <video> DOM element (not WebGL texture). Far more reliable
+        on Android Chrome where WebGL texture camera fails silently.
+
+        No 'embedded' attribute — A-Frame takes full viewport ownership.
+      */
+      const wrapper = document.createElement('div');
+      wrapper.id = 'ar-scene-wrapper';
+      wrapper.style.cssText = 'position:fixed;inset:0;z-index:1;';
+      wrapper.innerHTML = `
         <a-scene
+          id="ar-scene"
           vr-mode-ui="enabled: false"
           arjs="sourceType: webcam; videoTexture: false; debugUIEnabled: false; trackingMethod: best"
           renderer="antialias: true; alpha: true; precision: medium; logarithmicDepthBuffer: true"
-          loading-screen="enabled: false"
-          id="ar-scene">
-          <a-camera
-            gps-projected-camera="originDestinationOffset: 0"
-            rotation-reader>
-          </a-camera>
+          loading-screen="enabled: false">
+          <a-camera gps-projected-camera="originDestinationOffset: 0" rotation-reader></a-camera>
           ${entityMarkup}
-        </a-scene>
-      `;
+        </a-scene>`;
 
-      document.getElementById('scene-container').innerHTML = sceneHtml;
+      // Insert as first child so all UI overlays (z-index 9999) sit above it
+      document.body.insertBefore(wrapper, document.body.firstChild);
 
-      // GPS watcher — updates accuracy badge and hides loader when ready
-      // FIX 1: gpsReady is now properly declared above, no ReferenceError
+      // GPS watcher
       if (navigator.geolocation) {
         navigator.geolocation.watchPosition(
           (pos) => {
             const acc = Math.round(pos.coords.accuracy);
             document.getElementById('gps-text').textContent = '±' + acc + 'm';
-            document.getElementById('loading-sub-text').textContent =
-              'Accuracy: ±' + acc + 'm' + (acc > 50 ? ' — move outdoors' : ' ✓');
-
-            // FIX 1: threshold raised to 50m — 30m is too strict for urban/indoor
-            if (acc <= 50 && !gpsReady) {
+            if (!gpsReady) {
+              // First position received — GPS is working, unblock immediately
               gpsReady = true;
               document.getElementById('gps-dot').classList.add('ready');
               hideLoadingOverlay();
             }
           },
           (err) => {
-            console.error('Geolocation error:', err);
-            document.getElementById('gps-text').textContent = 'GPS error';
-            // Still hide loader on GPS error so user isn't permanently stuck
+            console.error('GPS error:', err.code, err.message);
+            if (err.code === 2) {
+              // No GPS hardware (laptop) or chip off
+              document.getElementById('gps-text').textContent = 'No GPS';
+              document.getElementById('gps-dot').classList.add('warning');
+              document.getElementById('gps-notice').style.display = 'block';
+            } else if (err.code === 3) {
+              document.getElementById('gps-text').textContent = 'Timeout';
+            } else {
+              document.getElementById('gps-text').textContent = 'GPS off';
+            }
+            // Always unblock — scene is still usable
             if (!gpsReady) {
               gpsReady = true;
               hideLoadingOverlay();
             }
           },
-          { enableHighAccuracy: true, maximumAge: 0, timeout: 15000 }
+          { enableHighAccuracy: true, maximumAge: 0, timeout: 10000 }
         );
       } else {
-        document.getElementById('gps-text').textContent = 'No GPS';
+        document.getElementById('gps-text').textContent = 'No GPS API';
+        setTimeout(hideLoadingOverlay, 500);
       }
 
-      // Safety fallback: always hide loader after 8 seconds
-      // regardless of GPS state — user should never be permanently stuck
+      // Absolute safety fallback
       setTimeout(() => {
         if (!gpsReady) {
           gpsReady = true;
@@ -661,11 +659,10 @@
     }
 
     function hideLoadingOverlay() {
-      const overlay = document.getElementById('loading-overlay');
-      if (overlay) overlay.classList.add('hidden');
+      const el = document.getElementById('loading-overlay');
+      if (el) el.classList.add('hidden');
     }
   </script>
-
 </body>
 
 </html>

@@ -7,6 +7,8 @@ import { ArrowLeft, Upload as UploadIcon, MapPin } from 'lucide-react';
 import Map, { Marker } from 'react-map-gl';
 import { clsx } from 'clsx';
 import { Navigation } from '../components/Navigation';
+import { VoiceRecorder } from '../components/VoiceRecorder';
+import { ModelPreview } from '../components/ModelPreview';
 
 const MAPBOX_TOKEN = import.meta.env.VITE_MAPBOX_TOKEN || 'pk.eyJ1IjoiaGFyc2h5YWRhdmhhcHB5IiwiYSI6ImNsczB2b252MDBhN2Qya21zZ254Z254Z24ifQ.demo';
 
@@ -28,6 +30,11 @@ export const UploadPage: React.FC = () => {
   const [category, setCategory] = useState<Category>('visual');
   const [mediaUrl, setMediaUrl] = useState('');
   const [mediaType, setMediaType] = useState<MediaType>('image');
+  const [uploadMethod, setUploadMethod] = useState<'file' | 'voice' | 'model3d'>('file');
+  const [description, setDescription] = useState('');
+  const [aiLoading, setAiLoading] = useState(false);
+  const [uploadedFile, setUploadedFile] = useState<File | null>(null);
+
   const [pricingModel, setPricingModel] = useState<'free' | 'paid'>('free');
   const [tiers, setTiers] = useState({
     viewOnce: { enabled: false, price: 0.49 },
@@ -40,9 +47,12 @@ export const UploadPage: React.FC = () => {
   const [isUploadingMedia, setIsUploadingMedia] = useState(false);
   const [uploadPercent, setUploadPercent] = useState(0);
   const [expiresIn24h, setExpiresIn24h] = useState(false);
-  const fileInputRef = useRef<HTMLInputElement>(null);
-
   const [locationFetched, setLocationFetched] = useState(false);
+  const locationFetchedRef = useRef(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const modelInputRef = useRef<HTMLInputElement>(null);
+  const descRef = useRef<HTMLTextAreaElement>(null);
+
   const [viewState, setViewState] = useState({
     longitude: state?.lng || 0.1218,
     latitude: state?.lat || 52.2053,
@@ -108,11 +118,23 @@ export const UploadPage: React.FC = () => {
     setIsUploadingMedia(true);
     setUploadPercent(0);
     try {
+      const is3D = file.name.toLowerCase().endsWith('.glb') || file.name.toLowerCase().endsWith('.gltf');
+      if (is3D && file.size > 25 * 1024 * 1024) {
+        alert("3D Model must be under 25MB");
+        return;
+      }
+      const resourceType = is3D ? 'raw' : 'auto';
       const result = await uploadToCloudinary(file, (percent) => {
         setUploadPercent(percent);
-      });
+      }, resourceType);
+
       setMediaUrl(result.url);
-      setMediaType(result.mediaType);
+      setUploadedFile(file);
+      if (is3D) {
+        setMediaType('model3d');
+      } else {
+        setMediaType(result.mediaType);
+      }
     } catch (err) {
       console.error("Cloudinary upload error:", err);
       alert("Media upload failed. Check Cloudinary settings and Upload Preset.");
@@ -120,6 +142,52 @@ export const UploadPage: React.FC = () => {
       setIsUploadingMedia(false);
       setUploadPercent(0);
     }
+  };
+
+  const handleVoiceRecordingComplete = async (file: File) => {
+    setIsUploadingMedia(true);
+    setUploadPercent(0);
+    try {
+      const result = await uploadToCloudinary(file, (percent) => {
+        setUploadPercent(percent);
+      });
+      setMediaUrl(result.url);
+      setMediaType('voice');
+      setUploadedFile(file);
+    } catch (err) {
+      console.error("Cloudinary upload error:", err);
+      alert("Voice upload failed.");
+    } finally {
+      setIsUploadingMedia(false);
+      setUploadPercent(0);
+    }
+  };
+
+  const handleAIDescribe = async () => {
+    setAiLoading(true);
+    try {
+      const res = await fetch('/api/describe-artwork', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          imageUrl: mediaUrl,
+          title: title,
+          category: category,
+          mediaType: mediaType
+        })
+      });
+      const data = await res.json();
+      if (data.description) {
+        setDescription(data.description);
+        if (descRef.current) {
+          descRef.current.classList.add('bg-accent/20');
+          setTimeout(() => descRef.current?.classList.remove('bg-accent/20'), 800);
+        }
+      }
+    } catch (err) {
+      console.error('AI describe failed:', err);
+    }
+    setAiLoading(false);
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -152,6 +220,7 @@ export const UploadPage: React.FC = () => {
       const artworkData: any = {
         title,
         artistName: artistName || 'Anonymous',
+        description,
         artistId: auth?.currentUser?.uid || 'demo-user',
         category,
         mediaUrl,
@@ -246,6 +315,48 @@ export const UploadPage: React.FC = () => {
               placeholder="Your name..."
             />
           </div>
+          <div>
+            <label className="block text-sm font-bold text-text-secondary mb-2 uppercase tracking-wider">Artist</label>
+            <input
+              type="text"
+              value={artistName}
+              onChange={e => setArtistName(e.target.value)}
+              className="w-full bg-surface border border-white/10 rounded-xl p-4 text-white focus:outline-none focus:border-accent transition-colors"
+              placeholder="Your name..."
+            />
+          </div>
+          <div>
+            <label className="block text-sm font-bold text-text-secondary mb-2 uppercase tracking-wider">Description</label>
+            <textarea
+              ref={descRef}
+              value={description}
+              onChange={e => setDescription(e.target.value)}
+              rows={3}
+              maxLength={300}
+              className="w-full bg-surface border border-white/10 rounded-xl p-4 text-white focus:outline-none focus:border-accent transition-colors duration-800"
+              placeholder="Tell the world about this piece..."
+            />
+            <div className="flex justify-between items-start mt-2">
+              <span className="text-xs text-text-secondary">{description.length}/300</span>
+            </div>
+            {mediaUrl && (
+              <button
+                type="button"
+                onClick={handleAIDescribe}
+                disabled={aiLoading || (!title && !mediaUrl)}
+                className="mt-2 w-full border border-accent text-accent hover:bg-accent/10 font-bold py-2 rounded-xl transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+              >
+                {aiLoading ? (
+                  <>
+                    <span className="w-4 h-4 border-2 border-accent border-t-transparent rounded-full animate-spin" />
+                    Writing description...
+                  </>
+                ) : (
+                  '✨ Describe with AI'
+                )}
+              </button>
+            )}
+          </div>
         </div>
 
         {/* Category */}
@@ -272,44 +383,94 @@ export const UploadPage: React.FC = () => {
         {/* Media */}
         <div>
           <label className="block text-sm font-bold text-text-secondary mb-2 uppercase tracking-wider">Media</label>
-          {mediaUrl ? (
-            <div className="relative rounded-xl overflow-hidden border border-white/10 aspect-video bg-surface">
-              {mediaType === 'image' && <img src={mediaUrl} alt="Preview" className="w-full h-full object-cover" />}
-              {mediaType === 'video' && <video src={mediaUrl} className="w-full h-full object-cover" controls />}
-              {mediaType === 'audio' && <div className="w-full h-full flex items-center justify-center"><audio src={mediaUrl} controls /></div>}
+          {!mediaUrl && (
+            <div className="flex gap-2 mb-4 overflow-x-auto pb-2 scrollbar-none">
               <button
                 type="button"
-                onClick={() => setMediaUrl('')}
-                className="absolute top-2 right-2 bg-black/50 p-2 rounded-full text-white text-xs"
+                onClick={() => setUploadMethod('file')}
+                className={clsx("px-4 py-2 rounded-full text-xs font-bold transition-all whitespace-nowrap", uploadMethod === 'file' ? "bg-white/10 text-white" : "text-text-secondary bg-transparent")}
               >
-                Change
+                🖼️ Photo/Video/Audio
+              </button>
+              <button
+                type="button"
+                onClick={() => { setUploadMethod('voice'); setCategory('voice'); }}
+                className={clsx("px-4 py-2 rounded-full text-xs font-bold transition-all whitespace-nowrap", uploadMethod === 'voice' ? "bg-white/10 text-white" : "text-text-secondary bg-transparent")}
+              >
+                🎤 Voice Note
+              </button>
+              <button
+                type="button"
+                onClick={() => { setUploadMethod('model3d'); setCategory('3d' as Category); }}
+                className={clsx("px-4 py-2 rounded-full text-xs font-bold transition-all whitespace-nowrap", uploadMethod === 'model3d' ? "bg-white/10 text-white" : "text-text-secondary bg-transparent")}
+              >
+                🧊 3D Model
+              </button>
+            </div>
+          )}
+
+          {mediaUrl ? (
+            <div className="relative rounded-xl overflow-hidden border border-white/10 bg-surface">
+              {mediaType === 'image' && <img src={mediaUrl} alt="Preview" className="w-full aspect-video object-cover" />}
+              {mediaType === 'video' && <video src={mediaUrl} className="w-full aspect-video object-cover" controls />}
+              {(mediaType === 'audio' || mediaType === 'voice') && (
+                <div className="w-full aspect-video flex items-center justify-center p-4">
+                  <audio src={mediaUrl} controls className="w-full" />
+                </div>
+              )}
+              {mediaType === 'model3d' && uploadedFile && (
+                <ModelPreview file={uploadedFile} />
+              )}
+              <button
+                type="button"
+                onClick={() => {
+                  setMediaUrl('');
+                  setUploadedFile(null);
+                }}
+                className="absolute top-2 right-2 bg-black/50 p-2 rounded-full text-white text-xs z-10 hover:bg-black w-24 border border-white/20 backdrop-blur-md"
+              >
+                Clear Media
               </button>
             </div>
           ) : (
             <>
-              <button
-                type="button"
-                onClick={() => fileInputRef.current?.click()}
-                disabled={isUploadingMedia}
-                className="w-full aspect-video bg-surface border-2 border-dashed border-white/20 rounded-xl flex flex-col items-center justify-center text-text-secondary hover:text-white hover:border-white/40 transition-colors disabled:opacity-50 overflow-hidden relative"
-              >
-                {isUploadingMedia && (
-                  <div
-                    className="absolute bottom-0 left-0 h-1 bg-accent transition-all duration-300 ease-out"
-                    style={{ width: `${uploadPercent}%` }}
-                  />
-                )}
-                <UploadIcon size={32} className={clsx("mb-2", isUploadingMedia && "animate-bounce")} />
-                <span>{isUploadingMedia ? `Uploading to Cloudinary... ${uploadPercent}%` : "Tap to upload media"}</span>
-                <span className="text-xs opacity-50 mt-1">Image, Video, or Audio (Max 50MB)</span>
-              </button>
-              <input
-                type="file"
-                ref={fileInputRef}
-                className="hidden"
-                accept="image/*,video/*,audio/*"
-                onChange={handleFileChange}
-              />
+              {uploadMethod === 'voice' ? (
+                <VoiceRecorder onRecordingComplete={handleVoiceRecordingComplete} onCancel={() => setUploadMethod('file')} />
+              ) : uploadMethod === 'model3d' ? (
+                <>
+                  <button
+                    type="button"
+                    onClick={() => modelInputRef.current?.click()}
+                    disabled={isUploadingMedia}
+                    className="w-full aspect-video bg-surface border-2 border-dashed border-white/20 rounded-xl flex flex-col items-center justify-center text-text-secondary hover:text-white hover:border-[#00FFD1]/40 transition-colors disabled:opacity-50 overflow-hidden relative"
+                  >
+                    {isUploadingMedia && (
+                      <div className="absolute bottom-0 left-0 h-1 bg-[#00FFD1] transition-all duration-300 ease-out" style={{ width: `${uploadPercent}%` }} />
+                    )}
+                    <span className="text-4xl mb-2 opacity-50">🧊</span>
+                    <span>{isUploadingMedia ? `Uploading to Cloudinary... ${uploadPercent}%` : "Tap to upload 3D Model"}</span>
+                    <span className="text-xs opacity-50 mt-1">.glb or .gltf (Max 25MB)</span>
+                  </button>
+                  <input type="file" ref={modelInputRef} accept=".glb,.gltf" onChange={handleFileChange} className="hidden" />
+                </>
+              ) : (
+                <>
+                  <button
+                    type="button"
+                    onClick={() => fileInputRef.current?.click()}
+                    disabled={isUploadingMedia}
+                    className="w-full aspect-video bg-surface border-2 border-dashed border-white/20 rounded-xl flex flex-col items-center justify-center text-text-secondary hover:text-white hover:border-white/40 transition-colors disabled:opacity-50 overflow-hidden relative"
+                  >
+                    {isUploadingMedia && (
+                      <div className="absolute bottom-0 left-0 h-1 bg-accent transition-all duration-300 ease-out" style={{ width: `${uploadPercent}%` }} />
+                    )}
+                    <UploadIcon size={32} className={clsx("mb-2", isUploadingMedia && "animate-bounce")} />
+                    <span>{isUploadingMedia ? `Uploading to Cloudinary... ${uploadPercent}%` : "Tap to upload media"}</span>
+                    <span className="text-xs opacity-50 mt-1">Image, Video, or Audio (Max 50MB)</span>
+                  </button>
+                  <input type="file" ref={fileInputRef} accept="image/*,video/*,audio/*" onChange={handleFileChange} className="hidden" />
+                </>
+              )}
             </>
           )}
         </div>

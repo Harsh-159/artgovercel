@@ -54,3 +54,33 @@ body {
 .mapboxgl-ctrl-bottom-right {
   display: none !important;
 }
+
+@keyframes sonarPulse {
+  0%   { transform: scale(0); opacity: 0.8; }
+  70%  { opacity: 0.3; }
+  100% { transform: scale(8); opacity: 0; }
+}
+
+.sonar-ring {
+  position: absolute;
+  width: 60px;
+  height: 60px;
+  border-radius: 50%;
+  border: 2px solid #4488FF;
+  transform: scale(0);
+  pointer-events: none;
+}
+
+.sonar-ring-container .sonar-ring:nth-child(1) { animation: sonarPulse 4s ease-out infinite; }
+.sonar-ring-container .sonar-ring:nth-child(2) { animation: sonarPulse 4s ease-out infinite 1.3s; }
+.sonar-ring-container .sonar-ring:nth-child(3) { animation: sonarPulse 4s ease-out infinite 2.6s; }
+
+.orb-flare {
+  animation: orbFlare 0.6s ease-out forwards !important;
+}
+
+@keyframes orbFlare {
+  0%   { transform: scale(1);   filter: brightness(1); }
+  30%  { transform: scale(1.8); filter: brightness(2.5); }
+  100% { transform: scale(1);   filter: brightness(1); }
+}

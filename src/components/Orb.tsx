@@ -10,6 +10,8 @@ const categoryColors: Record<string, string> = {
   poetry: '#FF8844',
   digital: '#AA44FF',
   sculpture: '#EEEEEE',
+  voice: '#FF6B9D',
+  '3d': '#00FFD1',
 };
 
 export const Orb: React.FC<{ artwork: Artwork; onClick: () => void }> = ({ artwork, onClick }) => {
@@ -20,8 +22,10 @@ export const Orb: React.FC<{ artwork: Artwork; onClick: () => void }> = ({ artwo
   const isSparkling = artwork.likes > 10;
 
   return (
-    <div 
-      className="relative flex items-center justify-center cursor-pointer group drop-bounce"
+    <div
+      className="art-orb relative flex items-center justify-center cursor-pointer group drop-bounce"
+      data-lng={artwork.lng}
+      data-lat={artwork.lat}
       onClick={onClick}
       style={{
         width: isHot ? '48px' : '32px',
@@ -29,25 +33,25 @@ export const Orb: React.FC<{ artwork: Artwork; onClick: () => void }> = ({ artwo
       }}
     >
       {/* Outer Ring */}
-      <div 
+      <div
         className="absolute inset-0 rounded-full animate-pulse-slow"
         style={{ backgroundColor: color, opacity: 0.4 }}
       />
-      
+
       {/* Sparkle Ring */}
       {isSparkling && (
-        <div 
+        <div
           className="absolute inset-[-8px] rounded-full animate-spin-slow border border-dashed"
           style={{ borderColor: color, opacity: 0.6 }}
         />
       )}
 
       {/* Inner Core */}
-      <div 
+      <div
         className="absolute rounded-full shadow-glow transition-transform group-hover:scale-110"
-        style={{ 
-          backgroundColor: color, 
-          width: isHot ? '24px' : '16px', 
+        style={{
+          backgroundColor: color,
+          width: isHot ? '24px' : '16px',
           height: isHot ? '24px' : '16px',
           boxShadow: `0 0 15px ${color}`
         }}

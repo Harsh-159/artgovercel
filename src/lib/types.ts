@@ -1,9 +1,9 @@
 /// <reference types="vite/client" />
 
 export type Category =
-  'visual' | 'graffiti' | 'music' | 'dance' | 'poetry' | 'digital' | 'sculpture';
+  'visual' | 'graffiti' | 'music' | 'dance' | 'poetry' | 'digital' | 'sculpture' | 'voice' | '3d';
 
-export type MediaType = 'image' | 'video' | 'audio';
+export type MediaType = 'image' | 'video' | 'audio' | 'voice' | 'model3d';
 
 export interface Artwork {
   id: string;

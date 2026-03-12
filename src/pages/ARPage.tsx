@@ -1,341 +1,421 @@
 import React, { useEffect, useState, useRef } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
-import { getArtworkById } from '../lib/firebase';
+import { useNavigate } from 'react-router-dom';
+import { getArtworks } from '../lib/firebase';
 import { Artwork } from '../lib/types';
-import { ArrowLeft, Maximize } from 'lucide-react';
 import { UnlockModal } from '../components/UnlockModal';
-import { LikeButton } from '../components/LikeButton';
 import { clsx } from 'clsx';
+import { ArrowLeft, Maximize, Play, Pause } from 'lucide-react';
 
-// Pre-register A-Frame component to handle taps
-if (typeof window !== 'undefined' && !(window as any).hasRegisteredCursorListener) {
-  (window as any).hasRegisteredCursorListener = true;
-  // A-Frame might not be loaded immediately, wait for it
-  const registerComponent = () => {
-    if ((window as any).AFRAME) {
-      (window as any).AFRAME.registerComponent('cursor-listener', {
-        init: function () {
-          this.el.addEventListener('click', () => {
-            const event = new CustomEvent('ar-orb-tapped');
-            window.dispatchEvent(event);
-          });
-        }
-      });
-    } else {
-      setTimeout(registerComponent, 100);
-    }
-  };
-  registerComponent();
-}
+// Math Helpers
+const getDistance = (lat1: number, lon1: number, lat2: number, lon2: number) => {
+  const R = 6371e3;
+  const φ1 = lat1 * Math.PI / 180;
+  const φ2 = lat2 * Math.PI / 180;
+  const Δφ = (lat2 - lat1) * Math.PI / 180;
+  const Δλ = (lon2 - lon1) * Math.PI / 180;
+  const a = Math.sin(Δφ / 2) ** 2 + Math.cos(φ1) * Math.cos(φ2) * Math.sin(Δλ / 2) ** 2;
+  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+};
+
+const getBearing = (lat1: number, lon1: number, lat2: number, lon2: number) => {
+  const φ1 = lat1 * Math.PI / 180;
+  const φ2 = lat2 * Math.PI / 180;
+  const λ1 = lon1 * Math.PI / 180;
+  const λ2 = lon2 * Math.PI / 180;
+  const y = Math.sin(λ2 - λ1) * Math.cos(φ2);
+  const x = Math.cos(φ1) * Math.sin(φ2) - Math.sin(φ1) * Math.cos(φ2) * Math.cos(λ2 - λ1);
+  const θ = Math.atan2(y, x);
+  return (θ * 180 / Math.PI + 360) % 360;
+};
+
+type ARMode = 'scanning' | 'surface-detection' | 'placed' | 'music-playing';
 
 export const ARPage: React.FC = () => {
-  const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
-  const [artwork, setArtwork] = useState<Artwork | null>(null);
-  const [isLocked, setIsLocked] = useState(false);
-  const [showToast, setShowToast] = useState(false);
-  const [showDrawer, setShowDrawer] = useState(true);
-  const [distanceToArt, setDistanceToArt] = useState<number | null>(null);
-  const [isCloseEnough, setIsCloseEnough] = useState(false);
-  const sceneRef = useRef<HTMLDivElement>(null);
+  const [permissionGranted, setPermissionGranted] = useState<boolean | null>(null);
+  const [artworks, setArtworks] = useState<Artwork[]>([]);
+  const [mode, setMode] = useState<ARMode>('scanning');
+  const [selectedArtwork, setSelectedArtwork] = useState<Artwork | null>(null);
+  const [lockedSelected, setLockedSelected] = useState<Artwork | null>(null);
+  
+  const videoRef = useRef<HTMLVideoElement>(null);
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const audioRef = useRef<HTMLAudioElement>(null);
+  const musicUIRef = useRef<HTMLDivElement>(null);
+  const transformRef = useRef<HTMLDivElement>(null);
+  
+  const [isPlaying, setIsPlaying] = useState(false);
+  const [placedOrientation, setPlacedOrientation] = useState<{ beta: number, gamma: number } | null>(null);
 
-  const isModelViewerMediaType = artwork?.mediaType === 'image';
-  const MAX_PLACEMENT_DISTANCE_METERS = 30; // 30m required to unlock placement
-
-  // Haversine formula
-  const getDistanceInMeters = (lat1: number, lon1: number, lat2: number, lon2: number) => {
-    const R = 6371e3; // metres
-    const φ1 = lat1 * Math.PI / 180; // φ, λ in radians
-    const φ2 = lat2 * Math.PI / 180;
-    const Δφ = (lat2 - lat1) * Math.PI / 180;
-    const Δλ = (lon2 - lon1) * Math.PI / 180;
-
-    const a = Math.sin(Δφ / 2) * Math.sin(Δφ / 2) +
-            Math.cos(φ1) * Math.cos(φ2) *
-            Math.sin(Δλ / 2) * Math.sin(Δλ / 2);
-    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-
-    return R * c; // in metres
-  };
+  const stateRef = useRef({
+    location: null as { lat: number; lng: number } | null,
+    orientation: { heading: 0, beta: 0, gamma: 0 },
+    visibleOrbs: [] as any[]
+  });
 
   useEffect(() => {
-    if (id) {
-      getArtworkById(id).then(data => {
-        if (data) {
-          setArtwork(data);
-          const unlocked = localStorage.getItem(`unlocked_${data.id}`) === 'true';
-          if (data.isPaid && !unlocked) {
-            setIsLocked(true);
-          }
-          if (data.mediaType !== 'image') {
-            setShowDrawer(false); // Hide by default for A-Frame orb interaction
-          }
-        }
-      });
-    }
-  }, [id]);
-
-  useEffect(() => {
-    let watchId: number;
-    if (artwork && navigator.geolocation) {
-      // Continuously track moving user
-      watchId = navigator.geolocation.watchPosition(
-        (pos) => {
-          const dist = getDistanceInMeters(pos.coords.latitude, pos.coords.longitude, artwork.lat, artwork.lng);
-          setDistanceToArt(dist);
-          setIsCloseEnough(dist <= MAX_PLACEMENT_DISTANCE_METERS);
-        },
-        (err) => console.error("Location tracking error", err),
-        { enableHighAccuracy: true, maximumAge: 0, timeout: 5000 }
-      );
-    }
-    return () => {
-      if (watchId) navigator.geolocation.clearWatch(watchId);
-    };
-  }, [artwork]);
-
-  useEffect(() => {
-    const handleOrbTap = () => setShowDrawer(prev => !prev);
-    window.addEventListener('ar-orb-tapped', handleOrbTap);
-    return () => window.removeEventListener('ar-orb-tapped', handleOrbTap);
+    const unsub = getArtworks(setArtworks);
+    return () => unsub();
   }, []);
 
-  useEffect(() => {
-    if (artwork && !isLocked && sceneRef.current) {
-      
-      // Register custom WebXR Hit Test component for our specific use-case if not already registered
-      if (typeof window !== 'undefined' && !(window as any).hasRegisteredHitTest) {
-        (window as any).hasRegisteredHitTest = true;
-        const registerHitTest = () => {
-          if ((window as any).AFRAME) {
-            (window as any).AFRAME.registerComponent('ar-hit-test-listener', {
-              init: function () {
-                this.reticle = document.getElementById('reticle');
-                this.orb = document.getElementById('initial-orb');
-                this.artworkGroup = document.getElementById('artwork-group');
-                this.isPlaced = false;
-
-                // Listen for hit test events (surface found)
-                this.el.addEventListener('ar-hit-test-start', () => {
-                   console.log("Hit test started");
-                });
-
-                this.el.addEventListener('ar-hit-test-achieved', () => {
-                   console.log("Surface found!");
-                });
-
-                // Listen for tap/clicks to place the object
-                this.el.sceneEl.addEventListener('click', () => {
-                  // Only allow placement if close enough!
-                  const closeEnough = document.getElementById('scene-wrapper')?.dataset.closeEnough === 'true';
-                  if (!closeEnough) return;
-
-                  if (!this.reticle.components['ar-hit-test'].hasFound) return;
-                  if (this.isPlaced) return; // Only place once
-
-                  this.isPlaced = true;
-                  
-                  // Hide the orb, show the artwork
-                  this.orb.setAttribute('visible', 'false');
-                  this.artworkGroup.setAttribute('visible', 'true');
-
-                  // Move artwork to the reticle's position (the detected surface)
-                  const position = this.reticle.getAttribute('position');
-                  this.artworkGroup.setAttribute('position', position);
-                  
-                  // Optional: Notify the React app that placement occurred to show/hide UI if needed
-                  window.dispatchEvent(new CustomEvent('artwork-placed'));
-                });
-              },
-              tick: function() {
-                  const closeEnough = document.getElementById('scene-wrapper')?.dataset.closeEnough === 'true';
-                  
-                  // Hide reticle tracking functionality entirely if not close enough
-                  if (!closeEnough) {
-                    this.reticle.setAttribute('visible', 'false');
-                    this.orb.setAttribute('visible', 'false');
-                    return;
-                  }
-
-                  // Keep the orb positioned slightly above the reticle for scanning phase
-                  if (!this.isPlaced && this.reticle.components['ar-hit-test'].hasFound) {
-                      const pos = this.reticle.getAttribute('position');
-                      this.orb.setAttribute('position', `${pos.x} ${pos.y + 1} ${pos.z}`);
-                      this.orb.setAttribute('visible', 'true');
-                  }
-              }
-            });
-          } else {
-            setTimeout(registerHitTest, 100);
-          }
-        };
-        registerHitTest();
+  const requestPermissionsAndStart = async () => {
+    try {
+      // iOS 13+ DeviceOrientation request
+      if (typeof (DeviceOrientationEvent as any).requestPermission === 'function') {
+        const permissionState = await (DeviceOrientationEvent as any).requestPermission();
+        if (permissionState !== 'granted') {
+          navigate('/map');
+          return;
+        }
       }
 
-      // Prepare the Artwork representation (Audio/Video generic drops)
-      let artworkHtml = '';
-
-      if (artwork.mediaType === 'image') {
-        artworkHtml = `
-          <a-image
-            src="${artwork.mediaUrl}"
-            class="clickable"
-            cursor-listener
-            position="0 1 0"
-            width="2" height="2">
-          </a-image>
-        `;
-      } else if (artwork.mediaType === 'video') {
-        artworkHtml = `
-          <a-assets>
-            <video id="arVideo" src="${artwork.mediaUrl}" autoplay loop crossorigin="anonymous" playsinline></video>
-          </a-assets>
-          <a-video
-            src="#arVideo"
-            class="clickable"
-            cursor-listener
-            position="0 1 0"
-            width="2" height="1.125">
-          </a-video>
-        `;
-      } else if (artwork.mediaType === 'audio') {
-        artworkHtml = `
-          <a-sphere class="clickable" cursor-listener radius="0.3" color="#4488FF" position="-0.8 1 0">
-            <a-animation attribute="position" from="-0.8 1 0" to="-0.8 1.5 0" dur="1000" dir="alternate" repeat="indefinite"></a-animation>
-          </a-sphere>
-          <a-sphere class="clickable" cursor-listener radius="0.4" color="#FF3333" position="0 1 0">
-            <a-animation attribute="position" from="0 1 0" to="0 1.8 0" dur="1200" dir="alternate" repeat="indefinite"></a-animation>
-          </a-sphere>
-          <a-sphere class="clickable" cursor-listener radius="0.25" color="#FFD700" position="0.8 1 0">
-             <a-animation attribute="position" from="0.8 1 0" to="0.8 1.4 0" dur="900" dir="alternate" repeat="indefinite"></a-animation>
-          </a-sphere>
-        `;
-      } else {
-        // Fallback generic placement
-        artworkHtml = `
-          <a-box class="clickable" cursor-listener color="#44FF88" position="0 0.5 0" height="1" width="1" depth="1">
-            <a-animation attribute="rotation" to="0 360 0" dur="4000" easing="linear" repeat="indefinite"></a-animation>
-          </a-box>
-        `;
+      const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } });
+      if (videoRef.current) {
+        videoRef.current.srcObject = stream;
       }
-
-      const sceneHtml = `
-        <a-scene
-          webxr="optionalFeatures: hit-test;"
-          renderer="antialias: true; alpha: true"
-          ar-hit-test-listener
-          cursor="rayOrigin: mouse;"
-          raycaster="objects: .clickable"
-        >
-          <a-camera position="0 1.6 0"></a-camera>
-
-          <!-- Reticle (targeting ring on the floor) -->
-          <a-entity id="reticle" ar-hit-test="target: #reticle;" visible="false">
-             <a-ring color="#00ff00" radius-inner="0.1" radius-outer="0.15" rotation="-90 0 0"></a-ring>
-          </a-entity>
-
-          <!-- Initial Orb (floats above reticle before placement) -->
-          <a-entity id="initial-orb" position="0 1 -3" visible="false">
-             <a-sphere radius="0.2" color="#ffffff" material="opacity: 0.8; transparent: true; emissive: #ffffff; emissiveIntensity: 0.5"></a-sphere>
-             <a-entity text="value: Tap to Place; color: white; align: center; width: 4" position="0 0.4 0"></a-entity>
-          </a-entity>
-
-          <!-- The Actual Placed Artwork (Hidden initially) -->
-          <a-entity id="artwork-group" visible="false">
-             ${artworkHtml}
-          </a-entity>
-          
-        </a-scene>
-      `;
-
-      sceneRef.current.innerHTML = sceneHtml;
-
-      if (artwork.mediaType === 'audio') {
-        const audio = new Audio(artwork.mediaUrl);
-        audio.loop = true;
-        audio.play().catch(e => console.error("Audio play failed", e));
-        return () => audio.pause();
-      }
+      setPermissionGranted(true);
+    } catch (err) {
+      console.error("AR Permission error", err);
+      navigate('/map');
     }
-  }, [artwork, isLocked]);
-
-  const handleUnlock = () => {
-    setIsLocked(false);
-    setShowToast(true);
-    setTimeout(() => setShowToast(false), 3000);
   };
 
-  if (!artwork) return <div className="h-screen bg-background flex items-center justify-center text-white">Loading...</div>;
+  useEffect(() => {
+    if (!permissionGranted) return;
 
-  return (
-    <div id="scene-wrapper" data-close-enough={isCloseEnough} className="w-full h-screen bg-black relative overflow-hidden">
-      
-      {!isCloseEnough && (
-          <div className="absolute inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur pointer-events-none">
-            <div className="text-white text-center p-6 w-3/4 max-w-sm flex flex-col items-center">
-                <h3 className="font-bold text-2xl mb-4 text-accent animate-pulse">Walk Closer...</h3>
-                <div className="relative w-24 h-24 mb-6">
-                  <div className="absolute inset-0 border-4 border-white/20 border-t-accent rounded-full animate-spin"></div>
-                  <div className="absolute inset-0 flex items-center justify-center">📍</div>
-                </div>
-                <p className="text-lg">Distance: {distanceToArt ? Math.round(distanceToArt) : '...'}m</p>
-                <p className="text-sm text-text-secondary mt-2">Find the physical location to view this Art piece. {MAX_PLACEMENT_DISTANCE_METERS}m required.</p>
-            </div>
+    const handleOrientation = (e: DeviceOrientationEvent) => {
+      let heading = 0;
+      if ((e as any).webkitCompassHeading !== undefined) {
+        heading = (e as any).webkitCompassHeading;
+      } else if (e.alpha !== null) {
+        heading = (360 - e.alpha) % 360; // fallback Approximation
+      }
+      stateRef.current.orientation = { heading, beta: e.beta || 0, gamma: e.gamma || 0 };
+    };
+
+    window.addEventListener('deviceorientation', handleOrientation);
+
+    const watchId = navigator.geolocation.watchPosition(
+      (pos) => {
+        stateRef.current.location = { lat: pos.coords.latitude, lng: pos.coords.longitude };
+      },
+      (err) => console.error("GPS Error", err),
+      { enableHighAccuracy: true, maximumAge: 0, timeout: 5000 }
+    );
+
+    return () => {
+      window.removeEventListener('deviceorientation', handleOrientation);
+      navigator.geolocation.clearWatch(watchId);
+    };
+  }, [permissionGranted]);
+
+  // Main Render Loop
+  useEffect(() => {
+    if (!permissionGranted) return;
+    
+    let animationFrameId: number;
+
+    const render = () => {
+      const loc = stateRef.current.location;
+      const { heading, beta, gamma } = stateRef.current.orientation;
+
+      // Render Orbs in Scanning Mode
+      if (mode === 'scanning') {
+        const canvas = canvasRef.current;
+        const ctx = canvas?.getContext('2d');
+        if (canvas && ctx) {
+          const { width, height } = canvas;
+          if (canvas.width !== window.innerWidth || canvas.height !== window.innerHeight) {
+            canvas.width = window.innerWidth;
+            canvas.height = window.innerHeight;
+          }
+          ctx.clearRect(0, 0, width, height);
+
+          const visibleOrbs: any[] = [];
+          if (loc) {
+            artworks.forEach(art => {
+              const dist = getDistance(loc.lat, loc.lng, art.lat, art.lng);
+              const bearing = getBearing(loc.lat, loc.lng, art.lat, art.lng);
+
+              let diff = bearing - heading;
+              if (diff > 180) diff -= 360;
+              if (diff < -180) diff += 360;
+
+              // Only render if within 60 degrees of view
+              if (Math.abs(diff) <= 60) {
+                const x = ((diff + 60) / 120) * width;
+                const y = height / 2;
+
+                // Scale: 5m = 40px, 50m = 10px
+                let r = 40 - ((dist - 5) / 45) * 30;
+                r = Math.max(10, Math.min(40, r));
+
+                visibleOrbs.push({ ...art, x, y, r, dist });
+
+                ctx.beginPath();
+                ctx.arc(x, y, r, 0, Math.PI * 2);
+
+                let rgb = '255, 255, 255';
+                if (art.category === 'music') rgb = '255, 215, 0';
+                else if (art.category === 'graffiti') rgb = '255, 51, 51';
+                else if (art.category === 'visual') rgb = '68, 136, 255';
+                else if (art.category === 'poetry') rgb = '255, 136, 68';
+                else if (art.category === 'digital') rgb = '170, 68, 255';
+
+                ctx.fillStyle = `rgba(${rgb}, 0.8)`;
+                ctx.shadowColor = `rgba(${rgb}, 1)`;
+                ctx.shadowBlur = 20;
+                ctx.fill();
+
+                // Inner core
+                ctx.beginPath();
+                ctx.arc(x, y, r * 0.4, 0, Math.PI * 2);
+                ctx.fillStyle = 'rgba(255, 255, 255, 0.9)';
+                ctx.shadowBlur = 0;
+                ctx.fill();
+                
+                // Text tag below
+                if (r > 15) {
+                    ctx.font = 'bold 12px sans-serif';
+                    ctx.fillStyle = 'white';
+                    ctx.textAlign = 'center';
+                    ctx.fillText(`${Math.round(dist)}m`, x, y + r + 20);
+                }
+              }
+            });
+          }
+          stateRef.current.visibleOrbs = visibleOrbs;
+        }
+      }
+
+      // Track Music UI continuously in AR Space
+      if (mode === 'music-playing' && selectedArtwork && loc && musicUIRef.current) {
+         const dist = getDistance(loc.lat, loc.lng, selectedArtwork.lat, selectedArtwork.lng);
+         const bearing = getBearing(loc.lat, loc.lng, selectedArtwork.lat, selectedArtwork.lng);
+         let diff = bearing - heading;
+         if (diff > 180) diff -= 360;
+         if (diff < -180) diff += 360;
+
+         if (Math.abs(diff) <= 60) {
+             const width = window.innerWidth;
+             const height = window.innerHeight;
+             const x = ((diff + 60) / 120) * width;
+             const y = height / 2;
+             musicUIRef.current.style.transform = `translate(-50%, -50%) translate3d(${x}px, ${y}px, 0)`;
+             musicUIRef.current.style.opacity = '1';
+             musicUIRef.current.style.pointerEvents = 'auto';
+         } else {
+             musicUIRef.current.style.opacity = '0';
+             musicUIRef.current.style.pointerEvents = 'none';
+         }
+      }
+
+      // Perspective Transform rendering for Placed Objects
+      if (mode === 'placed' && placedOrientation && transformRef.current) {
+         const dBeta = beta - placedOrientation.beta;
+         const dGamma = gamma - placedOrientation.gamma;
+
+         // Rotate relative to anchor
+         const rotateX = Math.max(-90, Math.min(90, placedOrientation.beta - 90 - dBeta));
+         const rotateY = -dGamma;
+         
+         transformRef.current.style.transform = `rotateX(${rotateX}deg) rotateY(${rotateY}deg) translateZ(-300px)`;
+      }
+
+      animationFrameId = requestAnimationFrame(render);
+    };
+
+    render();
+    return () => cancelAnimationFrame(animationFrameId);
+  }, [permissionGranted, mode, artworks, selectedArtwork, placedOrientation]);
+
+  const handleCanvasClick = (e: React.MouseEvent<HTMLCanvasElement>) => {
+    if (mode !== 'scanning') return;
+
+    const rect = canvasRef.current?.getBoundingClientRect();
+    if (!rect) return;
+    const x = e.clientX - rect.left;
+    const y = e.clientY - rect.top;
+
+    const clickedOrb = stateRef.current.visibleOrbs.find((orb) => {
+      const distToClick = Math.sqrt((orb.x - x) ** 2 + (orb.y - y) ** 2);
+      return distToClick <= orb.r + 30; // 30px padding for easy tapping
+    });
+
+    if (clickedOrb) {
+       const isUnlocked = !clickedOrb.isPaid || localStorage.getItem(`unlocked_${clickedOrb.id}`) === 'true';
+       if (!isUnlocked) {
+         setLockedSelected(clickedOrb);
+         return;
+       }
+
+       setSelectedArtwork(clickedOrb);
+       if (clickedOrb.mediaType === 'audio') {
+         setMode('music-playing');
+         if (audioRef.current) {
+           audioRef.current.src = clickedOrb.mediaUrl;
+           audioRef.current.play();
+           setIsPlaying(true);
+         }
+       } else {
+         setMode('surface-detection');
+       }
+    }
+  };
+
+  const handleSurfaceTap = () => {
+    if (mode === 'surface-detection') {
+      const { beta, gamma } = stateRef.current.orientation;
+      setPlacedOrientation({ beta, gamma });
+      setMode('placed');
+    }
+  };
+
+  const quitAR = () => {
+     if (videoRef.current?.srcObject) {
+         (videoRef.current.srcObject as MediaStream).getTracks().forEach(t => t.stop());
+     }
+     navigate('/map');
+  };
+
+  if (permissionGranted === null) {
+    return (
+      <div className="h-screen bg-black text-white flex flex-col items-center justify-center p-6 text-center bg-[url('https://images.unsplash.com/photo-1550684848-fac1c5b4e853?q=80&w=2070')] bg-cover bg-center">
+        <div className="absolute inset-0 bg-black/70 backdrop-blur-sm z-0"></div>
+        <div className="relative z-10 w-full max-w-sm">
+          <div className="w-20 h-20 bg-accent rounded-full flex items-center justify-center mx-auto mb-8 animate-bounce shadow-[0_0_30px_rgba(68,136,255,0.8)]">
+             <Maximize size={32} />
           </div>
-      )}
-
-      {/* AR Scene Container (A-Frame) */}
-      {!isLocked && (
-        <div ref={sceneRef} className="absolute inset-0 z-0" />
-      )}
-
-      {/* Overlays */}
-      <div className="absolute inset-0 z-10 pointer-events-none flex flex-col justify-between p-6 overflow-hidden">
-        {/* Top Bar */}
-        <div className="flex justify-between items-start">
+          <h1 className="text-3xl font-heading font-bold mb-4">Start AR Camera</h1>
+          <p className="mb-8 text-white/80">Explore the physical world. We need your Camera, GPS, and Compass to project art securely into your environment.</p>
           <button 
-            onClick={() => navigate('/map')}
-            className="w-12 h-12 bg-surface/80 backdrop-blur-md rounded-full flex items-center justify-center border border-white/10 pointer-events-auto hover:bg-white/10 transition-colors shadow-lg"
+            onClick={requestPermissionsAndStart} 
+            className="bg-accent text-white px-8 py-4 rounded-full font-bold text-lg w-full shadow-[0_0_20px_rgba(68,136,255,0.4)] active:scale-95 transition-transform"
           >
-            <ArrowLeft className="text-white" />
+            Enable AR Tracking
+          </button>
+          <button 
+            onClick={() => navigate('/map')} 
+            className="mt-4 bg-white/10 text-white px-8 py-4 rounded-full font-bold text-sm w-full"
+          >
+            Cancel
           </button>
         </div>
-
-        {/* Bottom Card Drawer */}
-        <div className={clsx(
-            "bg-surface/90 backdrop-blur-xl border border-white/10 rounded-2xl p-4 flex items-center justify-between pointer-events-auto transition-transform duration-500 ease-in-out shadow-2xl",
-            showDrawer ? "translate-y-0" : "translate-y-[150%]"
-        )}>
-          <div>
-            <h2 className="text-xl font-heading font-bold text-white mb-1">{artwork.title}</h2>
-            <p className="text-sm text-text-secondary">{artwork.artistName}</p>
-          </div>
-          <div className="flex gap-2 items-center">
-             {!isModelViewerMediaType && (
-                 <button onClick={() => setShowDrawer(false)} className="w-10 h-10 rounded-full bg-white/10 flex items-center justify-center text-white mr-2 hover:bg-white/20 transition-colors">
-                     <Maximize size={16} />
-                 </button>
-             )}
-            <LikeButton artworkId={artwork.id} initialLikes={artwork.likes} />
-          </div>
-        </div>
       </div>
+    );
+  }
 
-      {/* Unlock Modal */}
-      {isLocked && (
-        <UnlockModal 
-          artwork={artwork} 
-          onUnlock={handleUnlock} 
-          onCancel={() => navigate('/map')} 
+  return (
+    <div className="w-full h-screen bg-black relative overflow-hidden" onClick={mode === 'surface-detection' ? handleSurfaceTap : undefined}>
+      
+      {/* Live Camera Feed */}
+      <video 
+        ref={videoRef} 
+        autoPlay 
+        playsInline 
+        muted 
+        className="absolute inset-0 w-full h-full object-cover z-0" 
+      />
+
+      {/* AR Orbs Rendering Layer */}
+      {mode === 'scanning' && (
+        <canvas 
+          ref={canvasRef}
+          onClick={handleCanvasClick}
+          className="absolute inset-0 z-10 block cursor-pointer touch-none"
         />
       )}
 
-      {/* Toast */}
-      {showToast && (
-        <div className="absolute top-20 left-1/2 -translate-x-1/2 bg-white text-black px-6 py-3 rounded-full font-bold shadow-lg animate-bounce z-50">
-          ✨ Unlocked forever
+      {/* Surface Detection / Cropping Frame UX */}
+      {mode === 'surface-detection' && (
+        <div className="absolute inset-0 z-10 flex flex-col items-center justify-center pointer-events-none">
+          <div className="w-64 h-64 border-4 border-dashed border-white/50 rounded-xl relative shadow-[0_0_15px_rgba(255,255,255,0.2)]">
+             <div className="absolute top-0 left-0 w-6 h-6 border-t-4 border-l-4 border-accent -ml-1 -mt-1"></div>
+             <div className="absolute top-0 right-0 w-6 h-6 border-t-4 border-r-4 border-accent -mr-1 -mt-1"></div>
+             <div className="absolute bottom-0 left-0 w-6 h-6 border-b-4 border-l-4 border-accent -ml-1 -mb-1"></div>
+             <div className="absolute bottom-0 right-0 w-6 h-6 border-b-4 border-r-4 border-accent -mr-1 -mb-1"></div>
+          </div>
+          <div className="mt-8 animate-pulse text-white font-bold text-sm bg-black/60 px-6 py-3 rounded-full backdrop-blur-md flex items-center gap-2 border border-white/10 shadow-xl">
+             <span className="text-xl">👉</span> Point at a surface, then tap!
+          </div>
         </div>
       )}
+
+      {/* Visually Placed AR Object using Perspective Transform */}
+      {mode === 'placed' && selectedArtwork && placedOrientation && (
+        <div className="absolute inset-0 z-10 pointer-events-none flex items-center justify-center overflow-hidden" style={{ perspective: '800px' }}>
+          <div ref={transformRef} style={{ transformStyle: 'preserve-3d' }} className="relative transition-transform ease-out duration-75 origin-center">
+             {selectedArtwork.mediaType === 'image' && (
+               <div className="relative p-2 bg-white rounded-lg shadow-[0_20px_50px_rgba(0,0,0,0.8)]">
+                 <img src={selectedArtwork.mediaUrl} className="max-w-[70vw] max-h-[50vh] object-cover rounded shadow-inner" />
+               </div>
+             )}
+             {selectedArtwork.mediaType === 'video' && (
+               <div className="relative p-2 bg-black rounded-lg shadow-[0_20px_50px_rgba(0,0,0,0.8)] border-2 border-white/20">
+                 <video src={selectedArtwork.mediaUrl} autoPlay loop playsInline className="max-w-[70vw] max-h-[50vh] object-cover rounded shadow-inner" />
+               </div>
+             )}
+          </div>
+        </div>
+      )}
+
+      {/* Spatial Audio Controls (Floating in AR) */}
+      <div 
+        ref={musicUIRef}
+        className={clsx(
+          "absolute top-0 left-0 z-20 bg-black/60 backdrop-blur-xl p-3 pr-5 rounded-full border border-white/20 flex items-center gap-4 text-white shadow-[0_0_30px_rgba(255,215,0,0.4)] pointer-events-none opacity-0 transition-opacity duration-300",
+          mode !== 'music-playing' && "hidden"
+        )}
+      >
+        <div className="w-12 h-12 rounded-full overflow-hidden flex-shrink-0 bg-accent text-white flex items-center justify-center font-bold relative shadow-inner">
+           {selectedArtwork?.mediaType === 'audio' && isPlaying && (
+              <span className="absolute inset-0 rounded-full border-2 border-white/50 animate-ping"></span>
+           )}
+           <span className="text-2xl mt-1">♫</span>
+        </div>
+        <div className="flex-1 min-w-[120px]">
+          <p className="font-bold text-sm whitespace-nowrap w-[120px] overflow-hidden text-ellipsis">{selectedArtwork?.title}</p>
+          <p className="text-xs text-text-secondary w-[120px] overflow-hidden text-ellipsis">{selectedArtwork?.artistName}</p>
+        </div>
+        <button 
+          onClick={() => {
+            if (isPlaying) audioRef.current?.pause();
+            else audioRef.current?.play();
+            setIsPlaying(!isPlaying);
+          }} 
+          className="w-12 h-12 rounded-full bg-accent text-white flex items-center justify-center hover:scale-105 active:scale-95 transition-all flex-shrink-0 shadow-lg"
+        >
+          {isPlaying ? <Pause className="fill-current w-5 h-5" /> : <Play className="fill-current w-5 h-5 ml-1" />}
+        </button>
+      </div>
+
+      {/* Back Button */}
+      <button 
+        onClick={() => {
+          if (mode !== 'scanning') {
+            setMode('scanning');
+            setSelectedArtwork(null);
+            audioRef.current?.pause();
+            setIsPlaying(false);
+          } else {
+            quitAR();
+          }
+        }}
+        className="absolute top-6 left-6 w-12 h-12 bg-black/50 backdrop-blur-md rounded-full flex items-center justify-center border border-white/10 pointer-events-auto hover:bg-white/20 z-50 text-white shadow-lg active:scale-95 transition-all"
+      >
+         <ArrowLeft className="w-6 h-6" />
+      </button>
+
+      {/* Unlock Dialog for Paid Items */}
+      {lockedSelected && (
+        <UnlockModal 
+          artwork={lockedSelected} 
+          onUnlock={() => setLockedSelected(null)} 
+          onCancel={() => setLockedSelected(null)} 
+        />
+      )}
+
+      <audio ref={audioRef} loop className="hidden" />
     </div>
   );
 };

@@ -14,6 +14,7 @@ const MAPBOX_TOKEN = import.meta.env.VITE_MAPBOX_TOKEN || 'pk.eyJ1IjoiaGFyc2h5YW
 export const MapPage: React.FC = () => {
   const [artworks, setArtworks] = useState<Artwork[]>([]);
   const [selectedArtwork, setSelectedArtwork] = useState<Artwork | null>(null);
+  const [locationFetched, setLocationFetched] = useState(false);
   const [viewState, setViewState] = useState({
     longitude: 0.1218,
     latitude: 52.2053,
@@ -35,10 +36,18 @@ export const MapPage: React.FC = () => {
             ...prev,
             longitude: pos.coords.longitude,
             latitude: pos.coords.latitude,
+            zoom: 15
           }));
+          setLocationFetched(true);
         },
-        (err) => console.error(err)
+        (err) => {
+          console.error(err);
+          setLocationFetched(true); // fallback to Cambridge if denied
+        },
+        { timeout: 5000, maximumAge: 0 }
       );
+    } else {
+      setLocationFetched(true); // if no geolocation supported
     }
 
     return () => unsubscribe();
@@ -47,6 +56,15 @@ export const MapPage: React.FC = () => {
   const handleOrbClick = (artwork: Artwork) => {
     setSelectedArtwork(artwork);
   };
+
+  if (!locationFetched) {
+    return (
+      <div className="w-full h-screen bg-black flex flex-col items-center justify-center text-white font-bold">
+        <div className="w-12 h-12 border-4 border-white/20 border-t-accent rounded-full animate-spin mb-4"></div>
+        <p>Locating you...</p>
+      </div>
+    );
+  }
 
   return (
     <div className="w-full h-screen bg-background relative overflow-hidden">

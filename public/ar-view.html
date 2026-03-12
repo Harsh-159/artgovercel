@@ -61,7 +61,8 @@
     */
     #arjs-video,
     body>video,
-    body>.arjs-video {
+    body>.arjs-video,
+    body>div>video {
       position: fixed !important;
       top: 0 !important;
       left: 0 !important;
@@ -802,8 +803,7 @@
           id="ar-scene"
           vr-mode-ui="enabled: false"
           arjs="sourceType: webcam; videoTexture: false; debugUIEnabled: false; trackingMethod: best"
-          renderer="antialias: true; alpha: true; clearColor: transparent; clearAlpha: 0; precision: medium"
-          background="color: transparent"
+          renderer="antialias: true; alpha: true; precision: medium"
           loading-screen="enabled: false">
           <a-camera gps-projected-camera="originDestinationOffset: 0" rotation-reader></a-camera>
           ${entityMarkup}
@@ -815,6 +815,37 @@
       // Insert as first child so all UI overlays (z-index 9999) sit above it
       setTimeout(() => {
         document.body.insertBefore(sceneNode, document.body.firstChild);
+
+        // Keep AR.js video feed locked as full-screen background.
+        const applyVideoStyles = () => {
+          const vids = document.querySelectorAll('body>video, #arjs-video, body>.arjs-video, body>div>video');
+          vids.forEach(v => {
+            v.style.setProperty('position', 'fixed', 'important');
+            v.style.setProperty('top', '0', 'important');
+            v.style.setProperty('left', '0', 'important');
+            v.style.setProperty('width', '100vw', 'important');
+            v.style.setProperty('height', '100vh', 'important');
+            v.style.setProperty('minWidth', '100vw', 'important');
+            v.style.setProperty('minHeight', '100vh', 'important');
+            v.style.setProperty('margin', '0', 'important');
+            v.style.setProperty('padding', '0', 'important');
+            v.style.setProperty('transform', 'none', 'important');
+            v.style.setProperty('objectFit', 'cover', 'important');
+            v.style.setProperty('zIndex', '0', 'important');
+          });
+        };
+
+        // Initial pass once scene/video are likely present.
+        applyVideoStyles();
+
+        // Re-apply every 500ms to fight AR.js inline style overrides.
+        window.__arVideoFixInterval = window.__arVideoFixInterval || setInterval(applyVideoStyles, 500);
+
+        // MutationObserver to react quickly when AR.js injects/replaces video elements.
+        if (!window.__arVideoObserver) {
+          window.__arVideoObserver = new MutationObserver(() => applyVideoStyles());
+          window.__arVideoObserver.observe(document.body, { childList: true, subtree: true });
+        }
       }, 0);
 
       // GPS watcher

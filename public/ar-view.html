@@ -10,21 +10,18 @@
   <title>GalleryOS AR</title>
 
   <!-- 
-      CRITICAL LOADING ORDER:
-      A-Frame must be fully loaded before AR.js.
-      Both must be loaded before any scene HTML is parsed.
-      Using synchronous script tags (no defer, no async) in <head>
-      guarantees this order. This is intentional and correct for A-Frame.
-    -->
+    CRITICAL LOADING ORDER:
+    A-Frame must be fully loaded before AR.js.
+    Both must be loaded before any scene HTML is parsed.
+    Synchronous script tags in <head> guarantee this order.
+  -->
   <script src="https://aframe.io/releases/1.4.0/aframe.min.js"></script>
   <script src="https://cdn.jsdelivr.net/gh/AR-js-org/AR.js@3.4.2/aframe/build/aframe-ar.js"></script>
 
   <style>
-    /* 
-        These styles are CRITICAL.
-        A-Frame sets a-scene to position:fixed which is correct.
-        We must ensure nothing interferes with it.
-      */
+    /* FIX 3: @import must be FIRST in a style block */
+    @import url('https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=DM+Sans:wght@400;600;700&display=swap');
+
     * {
       margin: 0;
       padding: 0;
@@ -36,19 +33,22 @@
       width: 100%;
       height: 100%;
       overflow: hidden;
+      /* FIX 2 SUPPORT: body must be transparent so the AR.js video
+         element (z-index: -1) is visible behind the canvas */
       background: transparent;
-      /* CRITICAL: #000 hides AR.js video on iOS */
     }
 
+    /* Dark fallback strictly behind AR.js video (z-index: -1) */
     #bg-fill {
       position: fixed;
       inset: 0;
       background: #000;
       z-index: -3;
-      /* Placed behind AR.js video which is z-index: -2 */
     }
 
-    /* Back button overlaid on top of AR scene */
+    /* FIX 4: Without 'embedded', A-Frame owns the full page correctly.
+       We only need to ensure UI overlays sit above it. */
+
     #back-btn {
       position: fixed;
       top: env(safe-area-inset-top, 16px);
@@ -69,7 +69,6 @@
       gap: 6px;
     }
 
-    /* Bottom info bar */
     #info-bar {
       position: fixed;
       bottom: env(safe-area-inset-bottom, 0);
@@ -100,7 +99,6 @@
       margin-top: 2px;
     }
 
-    /* Like button */
     #like-btn {
       background: rgba(255, 255, 255, 0.1);
       border: 1px solid rgba(255, 255, 255, 0.15);
@@ -113,6 +111,7 @@
       align-items: center;
       gap: 6px;
       font-family: 'DM Sans', sans-serif;
+      transition: transform 0.2s ease;
     }
 
     #like-btn.liked {
@@ -120,7 +119,6 @@
       border-color: rgba(255, 60, 60, 0.5);
     }
 
-    /* GPS status indicator */
     #gps-status {
       position: fixed;
       top: env(safe-area-inset-top, 16px);
@@ -165,7 +163,6 @@
       }
     }
 
-    /* Loading overlay — shown while GPS acquires */
     #loading-overlay {
       position: fixed;
       inset: 0;
@@ -184,12 +181,11 @@
       pointer-events: none;
     }
 
-    /* Start overlay to capture iOS permissions */
     #start-overlay {
       position: fixed;
       inset: 0;
       z-index: 10000;
-      background: rgba(10, 10, 15, 0.95);
+      background: rgba(10, 10, 15, 0.97);
       display: flex;
       flex-direction: column;
       align-items: center;
@@ -226,7 +222,6 @@
       font-family: 'Space Mono', monospace;
       font-size: 24px;
       font-weight: bold;
-      margin-bottom: 8px;
     }
 
     .start-sub {
@@ -234,6 +229,7 @@
       font-family: 'DM Sans', sans-serif;
       font-size: 14px;
       max-width: 300px;
+      line-height: 1.5;
     }
 
     .spinner {
@@ -266,7 +262,6 @@
       max-width: 240px;
     }
 
-    /* Unlock overlay for paid content */
     #unlock-overlay {
       position: fixed;
       inset: 0;
@@ -345,19 +340,16 @@
       background: none;
       border: none;
     }
-
-    @import url('https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=DM+Sans:wght@400;600;700&display=swap');
   </style>
 </head>
 
 <body>
-  <!-- Dark fallback background strictly behind the AR camera feed -->
+
+  <!-- Dark fallback behind camera feed -->
   <div id="bg-fill"></div>
 
   <!-- Back button -->
-  <button id="back-btn" onclick="goBack()">
-    ← Back
-  </button>
+  <button id="back-btn" onclick="goBack()">← Back</button>
 
   <!-- GPS accuracy indicator -->
   <div id="gps-status">
@@ -365,7 +357,7 @@
     <span id="gps-text">Locating...</span>
   </div>
 
-  <!-- Bottom info bar (populated by JS) -->
+  <!-- Bottom info bar -->
   <div id="info-bar">
     <div>
       <div id="artwork-title">Loading...</div>
@@ -377,43 +369,43 @@
     </button>
   </div>
 
-  <!-- Loading overlay -->
+  <!-- Loading overlay — hidden by default, shown during GPS wait -->
   <div id="loading-overlay" class="hidden">
     <div class="spinner"></div>
-    <div class="loading-text">Opening AR</div>
-    <div class="loading-sub">Point your camera at the world and wait for GPS</div>
+    <div class="loading-text">Acquiring GPS</div>
+    <div class="loading-sub" id="loading-sub-text">Waiting for location signal...</div>
   </div>
 
-  <!-- Start overlay (captures gesture for iOS) -->
+  <!-- Start overlay — shown first to capture user gesture for permissions -->
   <div id="start-overlay">
-    <div class="start-title">Start AR Experience</div>
-    <div class="start-sub">We need access to your Camera, Location, and Device Motion to anchor art correctly.</div>
-    <button class="start-btn" onclick="startAR()">Allow Access & Start</button>
+    <div style="font-size: 56px; margin-bottom: 8px;">🌍</div>
+    <div class="start-title">GalleryOS AR</div>
+    <div class="start-sub">
+      Tap below to open your camera and experience art anchored in the real world.
+    </div>
+    <button class="start-btn" onclick="startAR()">Open AR Experience</button>
     <button class="back-link" onclick="goBack()" style="margin-top: 10px;">Return to Map</button>
   </div>
 
-  <!-- Unlock overlay (shown for paid content) -->
+  <!-- Unlock overlay for paid content -->
   <div id="unlock-overlay" class="hidden">
     <div class="lock-icon">🔒</div>
     <div class="unlock-title" id="unlock-title">Locked Artwork</div>
     <div class="unlock-price" id="unlock-price">£0.99</div>
-    <button class="unlock-btn" onclick="goToUnlock()">
-      Unlock & View Forever
-    </button>
+    <button class="unlock-btn" onclick="goToUnlock()">Unlock & View Forever</button>
     <button class="back-link" onclick="goBack()">Maybe later</button>
   </div>
 
-  <!-- Container for dynamic A-Frame scene -->
-  <div id="scene-container"
-    style="position: fixed; inset: 0; z-index: 0; pointer-events: auto; width: 100%; height: 100%;">
-    <!-- Scene injected via JavaScript -->
+  <!-- Scene container: A-Frame scene injected here after user gesture -->
+  <!-- FIX 4: No 'embedded' attribute — A-Frame takes full page ownership -->
+  <div id="scene-container" style="position: fixed; inset: 0; z-index: 0; pointer-events: auto;">
   </div>
 
   <script>
-    // ── Read URL params ──────────────────────────────────────────────
+    // ── URL params ───────────────────────────────────────────────────
     const params = new URLSearchParams(window.location.search);
     const artworkId = params.get('id');
-    const mediaUrl = params.get('mediaUrl');
+    const mediaUrl = decodeURIComponent(params.get('mediaUrl') || '');
     const mediaType = params.get('mediaType');
     const lat = parseFloat(params.get('lat') || '0');
     const lng = parseFloat(params.get('lng') || '0');
@@ -422,20 +414,20 @@
     const isPaid = params.get('isPaid') === 'true';
     const price = parseFloat(params.get('price') || '0');
     const appOrigin = params.get('origin') || window.location.origin;
+    const FIREBASE_PROJECT = params.get('fbProject');
 
-    // ── Check unlock state ───────────────────────────────────────────
+    // ── Unlock check ─────────────────────────────────────────────────
     const isUnlocked =
       !isPaid ||
       localStorage.getItem('unlocked_' + artworkId) === 'true' ||
       sessionStorage.getItem('viewonce_' + artworkId) === 'true' ||
       params.get('unlocked') === 'true';
 
-    // ── Populate UI ─────────────────────────────────────────────────
+    // ── Populate UI ──────────────────────────────────────────────────
     document.getElementById('artwork-title').textContent = title;
-    document.getElementById('artist-name').textContent = artistName
-      ? 'by ' + artistName : '';
+    document.getElementById('artist-name').textContent =
+      artistName ? 'by ' + artistName : '';
 
-    // ── Show unlock overlay if needed ────────────────────────────────
     if (!isUnlocked) {
       document.getElementById('unlock-overlay').classList.remove('hidden');
       document.getElementById('unlock-title').textContent = title;
@@ -443,9 +435,9 @@
         '£' + price.toFixed(2);
     }
 
-    // ── Navigation helpers ───────────────────────────────────────────
+    // ── Navigation ───────────────────────────────────────────────────
     function goBack() {
-      if (document.referrer) {
+      if (document.referrer && document.referrer !== window.location.href) {
         window.history.back();
       } else {
         window.location.href = appOrigin + '/map';
@@ -456,15 +448,12 @@
       window.location.href = appOrigin + '/ar/' + artworkId;
     }
 
-    // ── Like functionality (Firebase REST API — no SDK needed) ───────
-    const FIREBASE_PROJECT = params.get('fbProject');
+    // ── Like button ──────────────────────────────────────────────────
     let likeCount = parseInt(params.get('likes') || '0');
     let hasLiked = false;
 
     try {
-      const likedList = JSON.parse(
-        localStorage.getItem('liked_artworks') || '[]'
-      );
+      const likedList = JSON.parse(localStorage.getItem('liked_artworks') || '[]');
       hasLiked = likedList.includes(artworkId);
     } catch (e) { }
 
@@ -481,80 +470,85 @@
       document.getElementById('like-count').textContent = likeCount;
       document.getElementById('like-btn').classList.add('liked');
       document.getElementById('like-icon').textContent = '♥';
-
-      // Animate
       const btn = document.getElementById('like-btn');
       btn.style.transform = 'scale(1.3)';
-      setTimeout(() => btn.style.transform = 'scale(1)', 200);
+      setTimeout(() => { btn.style.transform = 'scale(1)'; }, 200);
 
-      // Store locally
       try {
-        const likedList = JSON.parse(
-          localStorage.getItem('liked_artworks') || '[]'
-        );
+        const likedList = JSON.parse(localStorage.getItem('liked_artworks') || '[]');
         likedList.push(artworkId);
         localStorage.setItem('liked_artworks', JSON.stringify(likedList));
       } catch (e) { }
 
-      // Update Firestore via REST (no SDK needed in plain HTML)
       if (FIREBASE_PROJECT) {
         fetch(
           'https://firestore.googleapis.com/v1/projects/' +
           FIREBASE_PROJECT +
-          '/databases/(default)/documents/artworks/' + artworkId,
+          '/databases/(default)/documents/artworks/' + artworkId +
+          '?updateMask.fieldPaths=likes',
           {
             method: 'PATCH',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              fields: {
-                likes: { integerValue: likeCount }
-              }
-            })
+            body: JSON.stringify({ fields: { likes: { integerValue: likeCount } } })
           }
         ).catch(e => console.error('Like update failed:', e));
       }
     }
 
+    // ── Start AR (called from button tap — REQUIRED for permissions) ──
     async function startAR() {
-      // 1. Request Device Motion for iOS 13+
-      if (typeof DeviceOrientationEvent !== 'undefined' && typeof DeviceOrientationEvent.requestPermission === 'function') {
+      // FIX 1: Declare gpsReady HERE so it's in scope for all callbacks below
+      let gpsReady = false;
+
+      // Request DeviceOrientation permission on iOS 13+
+      if (
+        typeof DeviceOrientationEvent !== 'undefined' &&
+        typeof DeviceOrientationEvent.requestPermission === 'function'
+      ) {
         try {
-          const permissionState = await DeviceOrientationEvent.requestPermission();
-          if (permissionState !== 'granted') {
-            alert("Motion access is required for AR to work.");
+          const state = await DeviceOrientationEvent.requestPermission();
+          if (state !== 'granted') {
+            alert('Motion access is required for AR to work correctly.');
             return;
           }
         } catch (e) {
-          console.error(e);
+          console.error('DeviceOrientation permission error:', e);
+          // Continue anyway on Android where this API doesn't exist
         }
       }
 
+      // Hide start overlay, show loading
       document.getElementById('start-overlay').classList.add('hidden');
       document.getElementById('loading-overlay').classList.remove('hidden');
 
-      // 2. Build entity markup synchronously inside gesture handler
+      // Build entity markup
       let entityMarkup = '';
-      const gpsAttr = `latitude: ${lat}; longitude: ${lng}`;
 
       if (isUnlocked && mediaUrl && lat && lng) {
+        const gpsAttr = 'latitude: ' + lat + '; longitude: ' + lng;
+
         if (mediaType === 'image') {
           entityMarkup = `
-            <a-assets>
+            <a-assets timeout="10000">
               <img id="arImg" src="${mediaUrl}" crossorigin="anonymous">
             </a-assets>
             <a-image
               src="#arImg"
               gps-projected-entity-place="${gpsAttr}"
-              look-at="[gps-projected-camera]"   
+              look-at="[gps-projected-camera]"
               scale="10 10 1"
               material="transparent: true; alphaTest: 0.1; side: double"
-              animation="property: scale; from: 9.5 9.5 1; to: 10 10 1; dir: alternate; dur: 2000; loop: true; easing: easeInOutSine">
+              animation="property: scale; from: 9.5 9.5 1; to: 10 10 1;
+                         dir: alternate; dur: 2000; loop: true; easing: easeInOutSine">
             </a-image>
           `;
         } else if (mediaType === 'video') {
           entityMarkup = `
-            <a-assets>
-              <video id="arVideo" src="${mediaUrl}" autoplay loop crossorigin="anonymous" playsinline webkit-playsinline></video>
+            <a-assets timeout="10000">
+              <video id="arVideo" src="${mediaUrl}"
+                autoplay loop crossorigin="anonymous"
+                playsinline webkit-playsinline muted>
+              </video>
             </a-assets>
             <a-video
               src="#arVideo"
@@ -565,26 +559,29 @@
             </a-video>
           `;
         } else if (mediaType === 'audio' || mediaType === 'voice') {
-          // Fallback native audio to guarantee playback
+          // Native audio element for guaranteed playback
           const audio = document.createElement('audio');
           audio.src = mediaUrl;
           audio.autoplay = true;
           audio.loop = true;
           document.body.appendChild(audio);
 
-          const colors = ['#FF6B9D', '#4488FF', '#FFD700', '#44FF88'];
-          const positions = [-0.6, -0.2, 0.2, 0.6];
-          const durations = [400, 600, 500, 450];
-
           entityMarkup = `
-            <a-assets>
-              <audio id="arAudio" src="${mediaUrl}" autoplay loop crossorigin="anonymous"></audio>
-            </a-assets>
-            <a-entity gps-projected-entity-place="${gpsAttr}" look-at="[gps-projected-camera]">
-              <a-box color="${colors[0]}" position="${positions[0]} 0 0" width="0.2" height="1" depth="0.2" animation="property: scale; from: 1 0.5 1; to: 1 2 1; dir: alternate; dur: ${durations[0]}; loop: true; easing: easeInOutSine"></a-box>
-              <a-box color="${colors[1]}" position="${positions[1]} 0 0" width="0.2" height="1" depth="0.2" animation="property: scale; from: 1 1.5 1; to: 1 0.3 1; dir: alternate; dur: ${durations[1]}; loop: true; easing: easeInOutSine"></a-box>
-              <a-box color="${colors[2]}" position="${positions[2]} 0 0" width="0.2" height="1" depth="0.2" animation="property: scale; from: 1 0.8 1; to: 1 1.8 1; dir: alternate; dur: ${durations[2]}; loop: true; easing: easeInOutSine"></a-box>
-              <a-box color="${colors[3]}" position="${positions[3]} 0 0" width="0.2" height="1" depth="0.2" animation="property: scale; from: 1 1.2 1; to: 1 0.4 1; dir: alternate; dur: ${durations[3]}; loop: true; easing: easeInOutSine"></a-box>
+            <a-entity
+              gps-projected-entity-place="${gpsAttr}"
+              look-at="[gps-projected-camera]">
+              <a-box color="#FF6B9D" position="-0.6 0 0" width="0.2" height="1" depth="0.2"
+                animation="property: scale; from: 1 0.5 1; to: 1 2 1; dir: alternate; dur: 400; loop: true; easing: easeInOutSine">
+              </a-box>
+              <a-box color="#4488FF" position="-0.2 0 0" width="0.2" height="1" depth="0.2"
+                animation="property: scale; from: 1 1.5 1; to: 1 0.3 1; dir: alternate; dur: 600; loop: true; easing: easeInOutSine">
+              </a-box>
+              <a-box color="#FFD700" position="0.2 0 0" width="0.2" height="1" depth="0.2"
+                animation="property: scale; from: 1 0.8 1; to: 1 1.8 1; dir: alternate; dur: 500; loop: true; easing: easeInOutSine">
+              </a-box>
+              <a-box color="#44FF88" position="0.6 0 0" width="0.2" height="1" depth="0.2"
+                animation="property: scale; from: 1 1.2 1; to: 1 0.4 1; dir: alternate; dur: 450; loop: true; easing: easeInOutSine">
+              </a-box>
             </a-entity>
           `;
         } else if (mediaType === 'model3d') {
@@ -593,56 +590,74 @@
               gltf-model="${mediaUrl}"
               gps-projected-entity-place="${gpsAttr}"
               scale="2 2 2"
-              animation="property: rotation; from: 0 0 0; to: 0 360 0; loop: true; dur: 8000; easing: linear">
+              animation="property: rotation; from: 0 0 0; to: 0 360 0;
+                         loop: true; dur: 8000; easing: linear">
             </a-entity>
           `;
         }
       }
 
-      // 3. Inject A-Frame scene
+      // FIX 2: videoTexture: false — uses a real <video> DOM element
+      // behind the canvas instead of a WebGL texture.
+      // This is far more reliable on Android Chrome.
+      // FIX 4: No 'embedded' attribute so A-Frame owns the full viewport.
       const sceneHtml = `
-          <a-scene
-            vr-mode-ui="enabled: false"
-            arjs="sourceType: webcam; videoTexture: true; debugUIEnabled: false; trackingMethod: best"
-            renderer="antialias: true; alpha: true; precision: medium; logarithmicDepthBuffer: true"
-            loading-screen="enabled: false"
-            embedded
-            id="ar-scene">
-            <a-camera gps-projected-camera="originDestinationOffset: 0" rotation-reader></a-camera>
-            ${entityMarkup}
-          </a-scene>
+        <a-scene
+          vr-mode-ui="enabled: false"
+          arjs="sourceType: webcam; videoTexture: false; debugUIEnabled: false; trackingMethod: best"
+          renderer="antialias: true; alpha: true; precision: medium; logarithmicDepthBuffer: true"
+          loading-screen="enabled: false"
+          id="ar-scene">
+          <a-camera
+            gps-projected-camera="originDestinationOffset: 0"
+            rotation-reader>
+          </a-camera>
+          ${entityMarkup}
+        </a-scene>
       `;
+
       document.getElementById('scene-container').innerHTML = sceneHtml;
 
-      // 4. Track GPS locally to dismiss loading screen
-      let watchId;
+      // GPS watcher — updates accuracy badge and hides loader when ready
+      // FIX 1: gpsReady is now properly declared above, no ReferenceError
       if (navigator.geolocation) {
-        watchId = navigator.geolocation.watchPosition(
+        navigator.geolocation.watchPosition(
           (pos) => {
             const acc = Math.round(pos.coords.accuracy);
             document.getElementById('gps-text').textContent = '±' + acc + 'm';
-            if (acc <= 30 && !gpsReady) {
-              document.getElementById('gps-dot').classList.add('ready');
+            document.getElementById('loading-sub-text').textContent =
+              'Accuracy: ±' + acc + 'm' + (acc > 50 ? ' — move outdoors' : ' ✓');
+
+            // FIX 1: threshold raised to 50m — 30m is too strict for urban/indoor
+            if (acc <= 50 && !gpsReady) {
               gpsReady = true;
+              document.getElementById('gps-dot').classList.add('ready');
               hideLoadingOverlay();
             }
           },
           (err) => {
+            console.error('Geolocation error:', err);
             document.getElementById('gps-text').textContent = 'GPS error';
-            console.error("Geolocation error:", err);
+            // Still hide loader on GPS error so user isn't permanently stuck
+            if (!gpsReady) {
+              gpsReady = true;
+              hideLoadingOverlay();
+            }
           },
           { enableHighAccuracy: true, maximumAge: 0, timeout: 15000 }
         );
       } else {
-        document.getElementById('gps-text').textContent = 'No GPS API';
+        document.getElementById('gps-text').textContent = 'No GPS';
       }
 
+      // Safety fallback: always hide loader after 8 seconds
+      // regardless of GPS state — user should never be permanently stuck
       setTimeout(() => {
         if (!gpsReady) {
           gpsReady = true;
           hideLoadingOverlay();
         }
-      }, 10000);
+      }, 8000);
     }
 
     function hideLoadingOverlay() {

@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { Category, MediaType } from '../lib/types';
-import { saveArtwork, signInWithGoogle, auth } from '../lib/firebase';
+import { saveArtwork, signInWithGoogle, auth, generateTokenId } from '../lib/firebase';
 import { uploadToCloudinary } from '../lib/cloudinary';
 import { ArrowLeft, Upload as UploadIcon, MapPin } from 'lucide-react';
 import Map, { Marker } from 'react-map-gl';
@@ -28,8 +28,13 @@ export const UploadPage: React.FC = () => {
   const [category, setCategory] = useState<Category>('visual');
   const [mediaUrl, setMediaUrl] = useState('');
   const [mediaType, setMediaType] = useState<MediaType>('image');
-  const [isPaid, setIsPaid] = useState(false);
-  const [price, setPrice] = useState('0.99');
+  const [pricingModel, setPricingModel] = useState<'free' | 'paid'>('free');
+  const [tiers, setTiers] = useState({
+    viewOnce: { enabled: false, price: 0.49 },
+    viewForever: { enabled: false, price: 0.99 },
+    own: { enabled: false, price: 4.99 },
+  });
+  const [pricingError, setPricingError] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [showSuccess, setShowSuccess] = useState(false);
   const [isUploadingMedia, setIsUploadingMedia] = useState(false);
@@ -43,7 +48,7 @@ export const UploadPage: React.FC = () => {
     latitude: state?.lat || 52.2053,
     zoom: 15
   });
-  
+
   // Keep the old `location` pointer in sync for the form
   const [location, setLocation] = useState({ lat: viewState.latitude, lng: viewState.longitude });
 
@@ -75,13 +80,13 @@ export const UploadPage: React.FC = () => {
     if (navigator.geolocation && !state) {
       navigator.geolocation.getCurrentPosition(
         (pos) => {
-           setUserLocation({ lat: pos.coords.latitude, lng: pos.coords.longitude });
-           setViewState({
-             longitude: pos.coords.longitude,
-             latitude: pos.coords.latitude,
-             zoom: 15
-           });
-           setLocationFetched(true);
+          setUserLocation({ lat: pos.coords.latitude, lng: pos.coords.longitude });
+          setViewState({
+            longitude: pos.coords.longitude,
+            latitude: pos.coords.latitude,
+            zoom: 15
+          });
+          setLocationFetched(true);
         },
         (err) => {
           console.error(err);
@@ -119,10 +124,31 @@ export const UploadPage: React.FC = () => {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    setPricingError('');
     if (!title || !mediaUrl) return;
+
+    if (pricingModel === 'paid') {
+      if (!tiers.viewOnce.enabled && !tiers.viewForever.enabled && !tiers.own.enabled) {
+        setPricingError('At least one tier must be enabled');
+        return;
+      }
+
+      const enabledTiers = [];
+      if (tiers.viewOnce.enabled) enabledTiers.push({ name: 'View Once', price: tiers.viewOnce.price });
+      if (tiers.viewForever.enabled) enabledTiers.push({ name: 'View Forever', price: tiers.viewForever.price });
+      if (tiers.own.enabled) enabledTiers.push({ name: 'Own', price: tiers.own.price });
+
+      for (let i = 0; i < enabledTiers.length - 1; i++) {
+        if (enabledTiers[i].price >= enabledTiers[i + 1].price) {
+          setPricingError(`${enabledTiers[i].name} price must be lower than ${enabledTiers[i + 1].name} price`);
+          return;
+        }
+      }
+    }
 
     setIsSubmitting(true);
     try {
+      const isPaidMode = pricingModel === 'paid';
       const artworkData: any = {
         title,
         artistName: artistName || 'Anonymous',
@@ -132,15 +158,20 @@ export const UploadPage: React.FC = () => {
         mediaType,
         lat: location.lat,
         lng: location.lng,
-        isPaid,
+        isPaid: isPaidMode,
         likes: 0,
         createdAt: new Date(),
-        isActive: true
+        isActive: true,
+        accessTiers: isPaidMode ? {
+          viewOnce: { enabled: tiers.viewOnce.enabled, price: tiers.viewOnce.price },
+          viewForever: { enabled: tiers.viewForever.enabled, price: tiers.viewForever.price },
+          own: { enabled: tiers.own.enabled, price: tiers.own.price, tokenId: generateTokenId() }
+        } : {
+          viewOnce: { enabled: false, price: tiers.viewOnce.price },
+          viewForever: { enabled: false, price: tiers.viewForever.price },
+          own: { enabled: false, price: tiers.own.price, tokenId: generateTokenId() }
+        }
       };
-
-      if (isPaid) {
-        artworkData.price = parseFloat(price);
-      }
 
       if (expiresIn24h) {
         artworkData.expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000);
@@ -325,7 +356,7 @@ export const UploadPage: React.FC = () => {
                   </div>
                 </Marker>
               )}
-              
+
               <Marker longitude={location.lng} latitude={location.lat} anchor="bottom" draggable onDragEnd={e => setLocation({ lat: e.lngLat.lat, lng: e.lngLat.lng })}>
                 <MapPin size={32} className="text-accent drop-shadow-lg" />
               </Marker>
@@ -341,24 +372,81 @@ export const UploadPage: React.FC = () => {
           <div className="flex items-center justify-between mb-4">
             <span className="font-bold text-white">Pricing</span>
             <div className="flex bg-black/50 rounded-full p-1 border border-white/10">
-              <button type="button" onClick={() => setIsPaid(false)} className={clsx("px-4 py-1 rounded-full text-sm font-bold transition-colors", !isPaid ? "bg-white text-black" : "text-text-secondary")}>Free</button>
-              <button type="button" onClick={() => setIsPaid(true)} className={clsx("px-4 py-1 rounded-full text-sm font-bold transition-colors", isPaid ? "bg-accent text-white" : "text-text-secondary")}>Paid</button>
+              <button type="button" onClick={() => setPricingModel('free')} className={clsx("px-4 py-1 rounded-full text-sm font-bold transition-colors", pricingModel === 'free' ? "bg-white text-black" : "text-text-secondary")}>Free</button>
+              <button type="button" onClick={() => setPricingModel('paid')} className={clsx("px-4 py-1 rounded-full text-sm font-bold transition-colors", pricingModel === 'paid' ? "bg-accent text-white" : "text-text-secondary")}>Paid</button>
             </div>
           </div>
-          {isPaid && (
-            <div className="flex items-center gap-2">
-              <span className="text-xl text-text-secondary">£</span>
-              <input
-                type="number"
-                step="0.01"
-                min="0.30"
-                max="9.99"
-                value={price}
-                onChange={e => setPrice(e.target.value)}
-                className="bg-transparent text-2xl font-mono text-white focus:outline-none w-full"
-              />
+
+          {pricingModel === 'paid' && (
+            <div className="flex flex-col gap-3 mt-4">
+              <div className="bg-black/30 rounded-lg p-3 border border-white/5">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <span className="text-xl">👁</span>
+                    <div>
+                      <div className="font-bold text-white">View Once</div>
+                      <div className="text-xs text-text-secondary">Pay once to view this piece right now</div>
+                    </div>
+                  </div>
+                  <label className="relative inline-flex items-center cursor-pointer">
+                    <input type="checkbox" checked={tiers.viewOnce.enabled} onChange={(e) => setTiers({ ...tiers, viewOnce: { ...tiers.viewOnce, enabled: e.target.checked } })} className="sr-only peer" />
+                    <div className="w-11 h-6 bg-white/20 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-accent hover:after:scale-95"></div>
+                  </label>
+                </div>
+                {tiers.viewOnce.enabled && (
+                  <div className="flex items-center gap-2 mt-3 pt-3 border-t border-white/10">
+                    <span className="text-text-secondary">£</span>
+                    <input type="number" step="0.01" value={tiers.viewOnce.price} onChange={(e) => setTiers({ ...tiers, viewOnce: { ...tiers.viewOnce, price: parseFloat(e.target.value) || 0 } })} className="bg-transparent text-white font-mono focus:outline-none w-full" placeholder="0.49" />
+                  </div>
+                )}
+              </div>
+
+              <div className="bg-black/30 rounded-lg p-3 border border-white/5">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <span className="text-xl">♾</span>
+                    <div>
+                      <div className="font-bold text-white">View Forever</div>
+                      <div className="text-xs text-text-secondary">Unlock permanently — revisit any time</div>
+                    </div>
+                  </div>
+                  <label className="relative inline-flex items-center cursor-pointer">
+                    <input type="checkbox" checked={tiers.viewForever.enabled} onChange={(e) => setTiers({ ...tiers, viewForever: { ...tiers.viewForever, enabled: e.target.checked } })} className="sr-only peer" />
+                    <div className="w-11 h-6 bg-white/20 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-accent hover:after:scale-95"></div>
+                  </label>
+                </div>
+                {tiers.viewForever.enabled && (
+                  <div className="flex items-center gap-2 mt-3 pt-3 border-t border-white/10">
+                    <span className="text-text-secondary">£</span>
+                    <input type="number" step="0.01" value={tiers.viewForever.price} onChange={(e) => setTiers({ ...tiers, viewForever: { ...tiers.viewForever, price: parseFloat(e.target.value) || 0 } })} className="bg-transparent text-white font-mono focus:outline-none w-full" placeholder="0.99" />
+                  </div>
+                )}
+              </div>
+
+              <div className="bg-[#FFD700]/10 rounded-lg p-3 border border-[#FFD700]/30 shadow-[0_0_15px_rgba(255,215,0,0.1)]">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <span className="text-xl">⭐</span>
+                    <div>
+                      <div className="font-bold text-[#FFD700]">Own It</div>
+                      <div className="text-xs text-[#FFD700]/70">Become the verified owner. Receive an NFT certificate.</div>
+                    </div>
+                  </div>
+                  <label className="relative inline-flex items-center cursor-pointer">
+                    <input type="checkbox" checked={tiers.own.enabled} onChange={(e) => setTiers({ ...tiers, own: { ...tiers.own, enabled: e.target.checked } })} className="sr-only peer" />
+                    <div className="w-11 h-6 bg-white/20 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-[#FFD700] after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-[#FFD700] hover:after:scale-95"></div>
+                  </label>
+                </div>
+                {tiers.own.enabled && (
+                  <div className="flex items-center gap-2 mt-3 pt-3 border-t border-[#FFD700]/20">
+                    <span className="text-[#FFD700]/70">£</span>
+                    <input type="number" step="0.01" value={tiers.own.price} onChange={(e) => setTiers({ ...tiers, own: { ...tiers.own, price: parseFloat(e.target.value) || 0 } })} className="bg-transparent text-[#FFD700] font-mono focus:outline-none w-full" placeholder="4.99" />
+                  </div>
+                )}
+              </div>
             </div>
           )}
+          {pricingError && <p className="text-red-400 text-sm mt-3">{pricingError}</p>}
         </div>
 
         {/* Expiry */}

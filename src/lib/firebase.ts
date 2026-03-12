@@ -1,5 +1,5 @@
 import { initializeApp } from 'firebase/app';
-import { getFirestore, collection, onSnapshot, doc, getDoc, addDoc, updateDoc, increment, query, where } from 'firebase/firestore';
+import { getFirestore, collection, onSnapshot, doc, getDoc, getDocs, setDoc, addDoc, updateDoc, increment, query, where } from 'firebase/firestore';
 import { getAuth, signInWithRedirect, getRedirectResult, GoogleAuthProvider } from 'firebase/auth';
 import { getStorage } from 'firebase/storage';
 import { Artwork } from './types';
@@ -18,6 +18,48 @@ const isDemo = firebaseConfig.apiKey === "demo";
 // Initialize Firebase only if not in demo mode
 const app = !isDemo ? initializeApp(firebaseConfig) : null;
 export const db = !isDemo ? getFirestore(app!) : null;
+export const generateTokenId = (): string => {
+  const array = new Uint8Array(32);
+  crypto.getRandomValues(array);
+  return Array.from(array).map(b => b.toString(16).padStart(2, '0')).join('');
+};
+
+export const saveCertificate = async (cert: any): Promise<void> => {
+  try {
+    await setDoc(doc(db!, 'certificates', cert.tokenId), cert);
+  } catch (error) {
+    console.error('Failed to save certificate:', error);
+  }
+};
+
+export const getCertificate = async (tokenId: string): Promise<any | null> => {
+  try {
+    const snap = await getDoc(doc(db!, 'certificates', tokenId));
+    return snap.exists() ? snap.data() : null;
+  } catch (error) {
+    console.error('Failed to fetch certificate:', error);
+    return null;
+  }
+};
+
+export const getOwnershipByUser = async (
+  artworkId: string,
+  userId: string
+): Promise<any | null> => {
+  try {
+    const q = query(
+      collection(db!, 'certificates'),
+      where('artworkId', '==', artworkId),
+      where('ownerId', '==', userId)
+    );
+    const snap = await getDocs(q);
+    return snap.empty ? null : snap.docs[0].data();
+  } catch (error) {
+    console.error('Failed to fetch ownership:', error);
+    return null;
+  }
+};
+
 export const auth = !isDemo ? getAuth(app!) : null;
 export const storage = !isDemo ? getStorage(app!) : null;
 

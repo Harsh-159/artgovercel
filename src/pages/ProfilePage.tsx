@@ -12,6 +12,15 @@ export const ProfilePage: React.FC = () => {
     const [artworks, setArtworks] = useState<Artwork[]>([]);
     const [isLoading, setIsLoading] = useState(true);
     const [currentUser, setCurrentUser] = useState(auth?.currentUser);
+    const [ownedCount, setOwnedCount] = useState(0);
+
+    useEffect(() => {
+        let count = 0;
+        for (let i = 0; i < localStorage.length; i++) {
+            if (localStorage.key(i)?.startsWith('owned_')) count++;
+        }
+        setOwnedCount(count);
+    }, []);
 
     useEffect(() => {
         const unsubAuth = auth?.onAuthStateChanged(user => {
@@ -92,7 +101,7 @@ export const ProfilePage: React.FC = () => {
 
             {/* Stats Grid */}
             <div className="p-6">
-                <div className="grid grid-cols-2 gap-4 mb-10">
+                <div className="grid grid-cols-2 lg:grid-cols-3 gap-4 mb-10">
                     <div className="bg-surface border border-white/10 p-4 rounded-2xl flex flex-col items-center justify-center text-center">
                         <MapPin size={24} className="text-accent mb-2" />
                         <span className="text-2xl font-mono font-bold text-white">{stats.pins}</span>
@@ -112,6 +121,11 @@ export const ProfilePage: React.FC = () => {
                         <Coins size={24} className="text-yellow-400 mb-2" />
                         <span className="text-2xl font-mono font-bold text-white">£{stats.earnings.toFixed(2)}</span>
                         <span className="text-xs text-text-secondary uppercase tracking-wider">Earnings <span className="text-[9px] opacity-50">(simulated)</span></span>
+                    </div>
+                    <div className="bg-[#FFD700]/10 border border-[#FFD700]/30 p-4 rounded-2xl flex flex-col items-center justify-center text-center shadow-[0_0_15px_rgba(255,215,0,0.1)]">
+                        <span className="text-2xl mb-2">⭐</span>
+                        <span className="text-2xl font-mono font-bold text-[#FFD700]">{ownedCount}</span>
+                        <span className="text-xs text-[#FFD700]/70 uppercase tracking-wider">Owned NFTs</span>
                     </div>
                 </div>
 
@@ -147,7 +161,15 @@ export const ProfilePage: React.FC = () => {
                                     {art.mediaType === 'video' && <video src={art.mediaUrl} className="w-full h-full object-cover pointer-events-none" muted />}
                                     {art.mediaType === 'audio' && <div className="w-full h-full flex items-center justify-center bg-gradient-to-br from-blue-900 to-purple-900"><span className="text-3xl">🎵</span></div>}
 
-                                    <div className="absolute top-2 right-2 flex gap-1">
+                                    <div className="absolute top-2 right-2 flex flex-col gap-1 items-end">
+                                        {localStorage.getItem(`owned_${art.id}`) && (
+                                            <button
+                                                onClick={(e) => { e.stopPropagation(); navigate(`/certificate/${localStorage.getItem(`owned_${art.id}`)}`); }}
+                                                className="bg-[#FFD700]/20 backdrop-blur px-2 py-0.5 rounded text-[10px] font-bold text-[#FFD700] border border-[#FFD700]/40 flex items-center gap-1 hover:scale-105 transition-transform"
+                                            >
+                                                <span>⭐</span> Owned
+                                            </button>
+                                        )}
                                         {art.isPaid && (
                                             <span className="bg-black/60 backdrop-blur px-2 py-0.5 rounded text-[10px] font-bold text-yellow-400 border border-yellow-400/20">
                                                 PAID

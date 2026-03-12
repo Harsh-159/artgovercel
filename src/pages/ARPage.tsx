@@ -287,9 +287,16 @@ export const ARPage: React.FC = () => {
       return distToClick <= orb.r + 30; // 30px padding for easy tapping
     });
 
+    const checkAccess = (artwork: Artwork): boolean => {
+      if (!artwork.isPaid) return true;
+      if (localStorage.getItem(`unlocked_${artwork.id}`)) return true;
+      if (sessionStorage.getItem(`viewonce_${artwork.id}`)) return true;
+      if (new URLSearchParams(window.location.search).get('unlocked') === 'true') return true;
+      return false;
+    };
+
     if (clickedOrb) {
-      const isUnlocked = !clickedOrb.isPaid || localStorage.getItem(`unlocked_${clickedOrb.id}`) === 'true';
-      if (!isUnlocked) {
+      if (!checkAccess(clickedOrb)) {
         setLockedSelected(clickedOrb);
         return;
       }

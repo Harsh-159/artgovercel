@@ -697,11 +697,9 @@
     }
 
     async function startAR() {
-      // CRITICAL: gpsReady declared here so it's in scope for all
-      // callbacks — previously undeclared causing ReferenceError crash
       let gpsReady = false;
 
-      // iOS 13+ motion permission (Android ignores this safely)
+      // iOS 13+ motion permission
       if (
         typeof DeviceOrientationEvent !== 'undefined' &&
         typeof DeviceOrientationEvent.requestPermission === 'function'
@@ -720,7 +718,6 @@
       document.getElementById('start-overlay').classList.add('hidden');
       document.getElementById('loading-overlay').classList.remove('hidden');
 
-      // Build entity HTML
       let entityMarkup = '';
 
       if (isUnlocked && mediaUrl && artLat && artLng) {
@@ -736,7 +733,7 @@
               gps-projected-entity-place="${gpsAttr}"
               look-at="[gps-projected-camera]"
               scale="5 5 1"
-              material="transparent: true; alphaTest: 0.1; side: double">
+              material="shader: flat; transparent: true; alphaTest: 0.1; side: double">
             </a-image>`;
 
         } else if (mediaType === 'video') {
@@ -749,7 +746,7 @@
               gps-projected-entity-place="${gpsAttr}"
               look-at="[gps-projected-camera]"
               width="16" height="9"
-              material="side: double">
+              material="shader: flat; side: double">
             </a-video>`;
 
         } else if (mediaType === 'audio' || mediaType === 'voice') {
@@ -761,10 +758,10 @@
 
           entityMarkup = `
             <a-entity gps-projected-entity-place="${gpsAttr}" look-at="[gps-projected-camera]">
-              <a-box color="#FF6B9D" position="-0.6 0 0" width="0.2" height="1" depth="0.2" animation="property: scale; from: 1 0.5 1; to: 1 2 1; dir: alternate; dur: 400; loop: true; easing: easeInOutSine"></a-box>
-              <a-box color="#4488FF" position="-0.2 0 0" width="0.2" height="1" depth="0.2" animation="property: scale; from: 1 1.5 1; to: 1 0.3 1; dir: alternate; dur: 600; loop: true; easing: easeInOutSine"></a-box>
-              <a-box color="#FFD700" position="0.2 0 0" width="0.2" height="1" depth="0.2" animation="property: scale; from: 1 0.8 1; to: 1 1.8 1; dir: alternate; dur: 500; loop: true; easing: easeInOutSine"></a-box>
-              <a-box color="#44FF88" position="0.6 0 0" width="0.2" height="1" depth="0.2" animation="property: scale; from: 1 1.2 1; to: 1 0.4 1; dir: alternate; dur: 450; loop: true; easing: easeInOutSine"></a-box>
+              <a-box material="shader: flat; color: #FF6B9D" position="-0.6 0 0" width="0.2" height="1" depth="0.2" animation="property: scale; from: 1 0.5 1; to: 1 2 1; dir: alternate; dur: 400; loop: true; easing: easeInOutSine"></a-box>
+              <a-box material="shader: flat; color: #4488FF" position="-0.2 0 0" width="0.2" height="1" depth="0.2" animation="property: scale; from: 1 1.5 1; to: 1 0.3 1; dir: alternate; dur: 600; loop: true; easing: easeInOutSine"></a-box>
+              <a-box material="shader: flat; color: #FFD700" position="0.2 0 0" width="0.2" height="1" depth="0.2" animation="property: scale; from: 1 0.8 1; to: 1 1.8 1; dir: alternate; dur: 500; loop: true; easing: easeInOutSine"></a-box>
+              <a-box material="shader: flat; color: #44FF88" position="0.6 0 0" width="0.2" height="1" depth="0.2" animation="property: scale; from: 1 1.2 1; to: 1 0.4 1; dir: alternate; dur: 450; loop: true; easing: easeInOutSine"></a-box>
             </a-entity>`;
 
         } else if (mediaType === 'model3d') {
@@ -777,46 +774,43 @@
             </a-entity>`;
         }
 
-        // Only add the blue sphere beacon for non-image types
-        // (images already have a visible plane — showing both is confusing)
         if (mediaType !== 'image') {
           entityMarkup += `
             <a-sphere
-              color="#4488FF"
               radius="1"
               gps-projected-entity-place="${gpsAttr}"
-              material="color: #4488FF; emissive: #4488FF; emissiveIntensity: 0.5; transparent: true; opacity: 0.9"
+              material="shader: flat; color: #4488FF; transparent: true; opacity: 0.9"
               animation="property: scale; from: 0.9 0.9 0.9; to: 1.1 1.1 1.1; dir: alternate; dur: 1500; loop: true; easing: easeInOutSine">
             </a-sphere>
           `;
         }
       }
 
-      /*
-        CRITICAL FIX: Inject <a-scene> directly without a wrapper div.
-        AR.js videoTexture: false creates a native <video> element.
-        We force it to fill the screen natively via the new CSS block.
-      */
       const tempDiv = document.createElement('div');
       tempDiv.innerHTML = `
         <a-scene
           id="ar-scene"
           vr-mode-ui="enabled: false"
-          arjs="sourceType: webcam; videoTexture: false; debugUIEnabled: false; trackingMethod: best"
-          renderer="antialias: true; alpha: true; precision: medium"
+          arjs="sourceType: webcam; videoTexture: false; debugUIEnabled: false;"
+          renderer="antialias: true; alpha: true; precision: medium; colorManagement: true;"
           loading-screen="enabled: false">
-          <a-camera gps-projected-camera="originDestinationOffset: 0" rotation-reader></a-camera>
+          
+          <a-light type="ambient" color="#ffffff" intensity="1.2"></a-light>
+          <a-light type="directional" color="#ffffff" intensity="0.6" position="-1 1 1"></a-light>
+
+          <a-camera 
+            gps-projected-camera="gpsMinDistance: 2; originDestinationOffset: 0" 
+            rotation-reader>
+          </a-camera>
           ${entityMarkup}
         </a-scene>
       `;
-      // Extract the parsed <a-scene> from our temp container
+
       const sceneNode = tempDiv.firstElementChild;
 
-      // Insert as first child so all UI overlays (z-index 9999) sit above it
       setTimeout(() => {
         document.body.insertBefore(sceneNode, document.body.firstChild);
 
-        // Keep AR.js video feed locked as full-screen background.
         const applyVideoStyles = () => {
           const vids = document.querySelectorAll('body>video, #arjs-video, body>.arjs-video, body>div>video');
           vids.forEach(v => {
@@ -835,20 +829,15 @@
           });
         };
 
-        // Initial pass once scene/video are likely present.
         applyVideoStyles();
-
-        // Re-apply every 500ms to fight AR.js inline style overrides.
         window.__arVideoFixInterval = window.__arVideoFixInterval || setInterval(applyVideoStyles, 500);
 
-        // MutationObserver to react quickly when AR.js injects/replaces video elements.
         if (!window.__arVideoObserver) {
           window.__arVideoObserver = new MutationObserver(() => applyVideoStyles());
           window.__arVideoObserver.observe(document.body, { childList: true, subtree: true });
         }
       }, 0);
 
-      // GPS watcher
       if (navigator.geolocation) {
         navigator.geolocation.watchPosition(
           (pos) => {
@@ -859,13 +848,11 @@
               document.getElementById('gps-dot').classList.add('ready');
               hideLoadingOverlay();
             }
-            // ── Proximity vibration check on every GPS update ──
             checkProximity(pos.coords.latitude, pos.coords.longitude);
           },
           (err) => {
             console.error('GPS error:', err.code, err.message);
             if (err.code === 2) {
-              // No GPS hardware (laptop) or chip off
               document.getElementById('gps-text').textContent = 'No GPS';
               document.getElementById('gps-dot').classList.add('warning');
               document.getElementById('gps-notice').style.display = 'block';
@@ -874,7 +861,6 @@
             } else {
               document.getElementById('gps-text').textContent = 'GPS off';
             }
-            // Always unblock — scene is still usable
             if (!gpsReady) {
               gpsReady = true;
               hideLoadingOverlay();
@@ -887,7 +873,6 @@
         setTimeout(hideLoadingOverlay, 500);
       }
 
-      // Absolute safety fallback
       setTimeout(() => {
         if (!gpsReady) {
           gpsReady = true;
@@ -895,7 +880,6 @@
         }
       }, 8000);
     }
-
     function hideLoadingOverlay() {
       const el = document.getElementById('loading-overlay');
       if (el) el.classList.add('hidden');

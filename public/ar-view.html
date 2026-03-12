@@ -1,0 +1,686 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, 
+          user-scalable=no" />
+  <meta name="mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <title>GalleryOS AR</title>
+
+  <!-- 
+      CRITICAL LOADING ORDER:
+      A-Frame must be fully loaded before AR.js.
+      Both must be loaded before any scene HTML is parsed.
+      Using synchronous script tags (no defer, no async) in <head>
+      guarantees this order. This is intentional and correct for A-Frame.
+    -->
+  <script src="https://aframe.io/releases/1.4.0/aframe.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/gh/AR-js-org/AR.js@3.4.2/aframe/build/aframe-ar.js"></script>
+
+  <style>
+    /* 
+        These styles are CRITICAL.
+        A-Frame sets a-scene to position:fixed which is correct.
+        We must ensure nothing interferes with it.
+      */
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    html,
+    body {
+      width: 100%;
+      height: 100%;
+      overflow: hidden;
+      background: #000;
+    }
+
+    /* Back button overlaid on top of AR scene */
+    #back-btn {
+      position: fixed;
+      top: env(safe-area-inset-top, 16px);
+      left: 16px;
+      z-index: 9999;
+      background: rgba(0, 0, 0, 0.6);
+      backdrop-filter: blur(10px);
+      -webkit-backdrop-filter: blur(10px);
+      border: 1px solid rgba(255, 255, 255, 0.15);
+      color: white;
+      border-radius: 50px;
+      padding: 10px 18px;
+      font-size: 14px;
+      font-family: 'DM Sans', sans-serif;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    /* Bottom info bar */
+    #info-bar {
+      position: fixed;
+      bottom: env(safe-area-inset-bottom, 0);
+      left: 0;
+      right: 0;
+      z-index: 9999;
+      background: rgba(0, 0, 0, 0.6);
+      backdrop-filter: blur(20px);
+      -webkit-backdrop-filter: blur(20px);
+      border-top: 1px solid rgba(255, 255, 255, 0.1);
+      padding: 12px 20px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    #artwork-title {
+      color: #F0F0FF;
+      font-family: 'Space Mono', monospace;
+      font-size: 15px;
+      font-weight: bold;
+    }
+
+    #artist-name {
+      color: #8888AA;
+      font-family: 'DM Sans', sans-serif;
+      font-size: 13px;
+      margin-top: 2px;
+    }
+
+    /* Like button */
+    #like-btn {
+      background: rgba(255, 255, 255, 0.1);
+      border: 1px solid rgba(255, 255, 255, 0.15);
+      color: white;
+      border-radius: 50px;
+      padding: 8px 14px;
+      font-size: 14px;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      font-family: 'DM Sans', sans-serif;
+    }
+
+    #like-btn.liked {
+      background: rgba(255, 60, 60, 0.3);
+      border-color: rgba(255, 60, 60, 0.5);
+    }
+
+    /* GPS status indicator */
+    #gps-status {
+      position: fixed;
+      top: env(safe-area-inset-top, 16px);
+      right: 16px;
+      z-index: 9999;
+      background: rgba(0, 0, 0, 0.6);
+      backdrop-filter: blur(10px);
+      -webkit-backdrop-filter: blur(10px);
+      border: 1px solid rgba(255, 255, 255, 0.15);
+      color: white;
+      border-radius: 50px;
+      padding: 8px 12px;
+      font-size: 12px;
+      font-family: monospace;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .gps-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: #FF4444;
+      animation: gpsFlash 1s infinite;
+    }
+
+    .gps-dot.ready {
+      background: #44FF88;
+      animation: none;
+    }
+
+    @keyframes gpsFlash {
+
+      0%,
+      100% {
+        opacity: 1;
+      }
+
+      50% {
+        opacity: 0.2;
+      }
+    }
+
+    /* Loading overlay — shown while GPS acquires */
+    #loading-overlay {
+      position: fixed;
+      inset: 0;
+      z-index: 9998;
+      background: rgba(10, 10, 15, 0.85);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 16px;
+      transition: opacity 0.5s ease;
+    }
+
+    #loading-overlay.hidden {
+      opacity: 0;
+      pointer-events: none;
+    }
+
+    /* Start overlay to capture iOS permissions */
+    #start-overlay {
+      position: fixed;
+      inset: 0;
+      z-index: 10000;
+      background: rgba(10, 10, 15, 0.95);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 20px;
+      padding: 32px;
+      text-align: center;
+      transition: opacity 0.3s ease;
+    }
+
+    #start-overlay.hidden {
+      opacity: 0;
+      pointer-events: none;
+    }
+
+    .start-btn {
+      background: #4488FF;
+      color: white;
+      border: none;
+      border-radius: 50px;
+      padding: 16px 32px;
+      font-size: 16px;
+      font-family: 'DM Sans', sans-serif;
+      font-weight: 700;
+      cursor: pointer;
+      box-shadow: 0 0 30px rgba(68, 136, 255, 0.4);
+      width: 100%;
+      max-width: 280px;
+      margin-top: 10px;
+    }
+
+    .start-title {
+      color: #F0F0FF;
+      font-family: 'Space Mono', monospace;
+      font-size: 24px;
+      font-weight: bold;
+      margin-bottom: 8px;
+    }
+
+    .start-sub {
+      color: #8888AA;
+      font-family: 'DM Sans', sans-serif;
+      font-size: 14px;
+      max-width: 300px;
+    }
+
+    .spinner {
+      width: 40px;
+      height: 40px;
+      border: 3px solid rgba(68, 136, 255, 0.2);
+      border-top-color: #4488FF;
+      border-radius: 50%;
+      animation: spin 0.8s linear infinite;
+    }
+
+    @keyframes spin {
+      to {
+        transform: rotate(360deg);
+      }
+    }
+
+    .loading-text {
+      color: #F0F0FF;
+      font-family: 'DM Sans', sans-serif;
+      font-size: 16px;
+      font-weight: 600;
+    }
+
+    .loading-sub {
+      color: #8888AA;
+      font-family: 'DM Sans', sans-serif;
+      font-size: 13px;
+      text-align: center;
+      max-width: 240px;
+    }
+
+    /* Unlock overlay for paid content */
+    #unlock-overlay {
+      position: fixed;
+      inset: 0;
+      z-index: 9997;
+      background: rgba(10, 10, 15, 0.92);
+      backdrop-filter: blur(20px);
+      -webkit-backdrop-filter: blur(20px);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 16px;
+      padding: 32px;
+      text-align: center;
+    }
+
+    #unlock-overlay.hidden {
+      display: none;
+    }
+
+    .lock-icon {
+      font-size: 48px;
+      animation: lockPulse 2s ease-in-out infinite;
+    }
+
+    @keyframes lockPulse {
+
+      0%,
+      100% {
+        transform: scale(1);
+      }
+
+      50% {
+        transform: scale(1.1);
+      }
+    }
+
+    .unlock-title {
+      color: #F0F0FF;
+      font-family: 'Space Mono', monospace;
+      font-size: 20px;
+      font-weight: bold;
+    }
+
+    .unlock-price {
+      color: #4488FF;
+      font-family: monospace;
+      font-size: 24px;
+      background: rgba(68, 136, 255, 0.15);
+      border: 1px solid rgba(68, 136, 255, 0.3);
+      border-radius: 50px;
+      padding: 6px 20px;
+    }
+
+    .unlock-btn {
+      background: #4488FF;
+      color: white;
+      border: none;
+      border-radius: 50px;
+      padding: 16px 32px;
+      font-size: 16px;
+      font-family: 'DM Sans', sans-serif;
+      font-weight: 700;
+      cursor: pointer;
+      box-shadow: 0 0 30px rgba(68, 136, 255, 0.4);
+      width: 100%;
+      max-width: 280px;
+    }
+
+    .back-link {
+      color: #8888AA;
+      font-family: 'DM Sans', sans-serif;
+      font-size: 14px;
+      cursor: pointer;
+      text-decoration: underline;
+      background: none;
+      border: none;
+    }
+
+    @import url('https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=DM+Sans:wght@400;600;700&display=swap');
+  </style>
+</head>
+
+<body>
+
+  <!-- Back button -->
+  <button id="back-btn" onclick="goBack()">
+    ← Back
+  </button>
+
+  <!-- GPS accuracy indicator -->
+  <div id="gps-status">
+    <div class="gps-dot" id="gps-dot"></div>
+    <span id="gps-text">Locating...</span>
+  </div>
+
+  <!-- Bottom info bar (populated by JS) -->
+  <div id="info-bar">
+    <div>
+      <div id="artwork-title">Loading...</div>
+      <div id="artist-name"></div>
+    </div>
+    <button id="like-btn" onclick="handleLike()">
+      <span id="like-icon">♡</span>
+      <span id="like-count">0</span>
+    </button>
+  </div>
+
+  <!-- Loading overlay -->
+  <div id="loading-overlay" class="hidden">
+    <div class="spinner"></div>
+    <div class="loading-text">Opening AR</div>
+    <div class="loading-sub">Point your camera at the world and wait for GPS</div>
+  </div>
+
+  <!-- Start overlay (captures gesture for iOS) -->
+  <div id="start-overlay">
+    <div class="start-title">Start AR Experience</div>
+    <div class="start-sub">We need access to your Camera, Location, and Device Motion to anchor art correctly.</div>
+    <button class="start-btn" onclick="startAR()">Allow Access & Start</button>
+    <button class="back-link" onclick="goBack()" style="margin-top: 10px;">Return to Map</button>
+  </div>
+
+  <!-- Unlock overlay (shown for paid content) -->
+  <div id="unlock-overlay" class="hidden">
+    <div class="lock-icon">🔒</div>
+    <div class="unlock-title" id="unlock-title">Locked Artwork</div>
+    <div class="unlock-price" id="unlock-price">£0.99</div>
+    <button class="unlock-btn" onclick="goToUnlock()">
+      Unlock & View Forever
+    </button>
+    <button class="back-link" onclick="goBack()">Maybe later</button>
+  </div>
+
+  <!--
+      THE AR SCENE
+      This is parsed AFTER A-Frame and AR.js are fully loaded 
+      (synchronous scripts in head guarantee this).
+      
+      gps-projected-camera and gps-projected-entity-place are used
+      for stability over the legacy gps-camera / gps-entity-place.
+      
+      The scene is initially empty — entities are added by JavaScript
+      once artwork data is loaded and GPS is ready.
+    -->
+  <a-scene vr-mode-ui="enabled: false"
+    arjs="sourceType: webcam; videoTexture: true; debugUIEnabled: false; trackingMethod: best"
+    renderer="antialias: true; alpha: true; precision: medium; logarithmicDepthBuffer: true"
+    loading-screen="enabled: false" id="ar-scene">
+
+    <a-camera gps-projected-camera="originDestinationOffset: 0" rotation-reader>
+    </a-camera>
+
+  </a-scene>
+
+  <script>
+    // ── Read URL params ──────────────────────────────────────────────
+    const params = new URLSearchParams(window.location.search);
+    const artworkId = params.get('id');
+    const mediaUrl = params.get('mediaUrl');
+    const mediaType = params.get('mediaType');
+    const lat = parseFloat(params.get('lat') || '0');
+    const lng = parseFloat(params.get('lng') || '0');
+    const title = params.get('title') || 'Untitled';
+    const artistName = params.get('artistName') || '';
+    const isPaid = params.get('isPaid') === 'true';
+    const price = parseFloat(params.get('price') || '0');
+    const appOrigin = params.get('origin') || window.location.origin;
+
+    // ── Check unlock state ───────────────────────────────────────────
+    const isUnlocked =
+      !isPaid ||
+      localStorage.getItem('unlocked_' + artworkId) === 'true' ||
+      sessionStorage.getItem('viewonce_' + artworkId) === 'true' ||
+      params.get('unlocked') === 'true';
+
+    // ── Populate UI ─────────────────────────────────────────────────
+    document.getElementById('artwork-title').textContent = title;
+    document.getElementById('artist-name').textContent = artistName
+      ? 'by ' + artistName : '';
+
+    // ── Show unlock overlay if needed ────────────────────────────────
+    if (!isUnlocked) {
+      document.getElementById('unlock-overlay').classList.remove('hidden');
+      document.getElementById('unlock-title').textContent = title;
+      document.getElementById('unlock-price').textContent =
+        '£' + price.toFixed(2);
+    }
+
+    // ── Navigation helpers ───────────────────────────────────────────
+    function goBack() {
+      if (document.referrer) {
+        window.history.back();
+      } else {
+        window.location.href = appOrigin + '/map';
+      }
+    }
+
+    function goToUnlock() {
+      window.location.href = appOrigin + '/ar/' + artworkId;
+    }
+
+    // ── Like functionality (Firebase REST API — no SDK needed) ───────
+    const FIREBASE_PROJECT = params.get('fbProject');
+    let likeCount = parseInt(params.get('likes') || '0');
+    let hasLiked = false;
+
+    try {
+      const likedList = JSON.parse(
+        localStorage.getItem('liked_artworks') || '[]'
+      );
+      hasLiked = likedList.includes(artworkId);
+    } catch (e) { }
+
+    document.getElementById('like-count').textContent = likeCount;
+    if (hasLiked) {
+      document.getElementById('like-btn').classList.add('liked');
+      document.getElementById('like-icon').textContent = '♥';
+    }
+
+    function handleLike() {
+      if (hasLiked) return;
+      hasLiked = true;
+      likeCount++;
+      document.getElementById('like-count').textContent = likeCount;
+      document.getElementById('like-btn').classList.add('liked');
+      document.getElementById('like-icon').textContent = '♥';
+
+      // Animate
+      const btn = document.getElementById('like-btn');
+      btn.style.transform = 'scale(1.3)';
+      setTimeout(() => btn.style.transform = 'scale(1)', 200);
+
+      // Store locally
+      try {
+        const likedList = JSON.parse(
+          localStorage.getItem('liked_artworks') || '[]'
+        );
+        likedList.push(artworkId);
+        localStorage.setItem('liked_artworks', JSON.stringify(likedList));
+      } catch (e) { }
+
+      // Update Firestore via REST (no SDK needed in plain HTML)
+      if (FIREBASE_PROJECT) {
+        fetch(
+          'https://firestore.googleapis.com/v1/projects/' +
+          FIREBASE_PROJECT +
+          '/databases/(default)/documents/artworks/' + artworkId,
+          {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              fields: {
+                likes: { integerValue: likeCount }
+              }
+            })
+          }
+        ).catch(e => console.error('Like update failed:', e));
+      }
+    }
+
+    // ── GPS status display ───────────────────────────────────────────
+    let gpsReady = false;
+
+    async function startAR() {
+      // Request Device Motion for iOS 13+
+      if (typeof DeviceOrientationEvent !== 'undefined' && typeof DeviceOrientationEvent.requestPermission === 'function') {
+        try {
+          const permissionState = await DeviceOrientationEvent.requestPermission();
+          if (permissionState !== 'granted') {
+            alert("Motion access is required for AR to work.");
+            return;
+          }
+        } catch (e) {
+          console.error(e);
+        }
+      }
+
+      // Request Camera Explicitly (to ensure iOS prompts immediately on user gesture)
+      try {
+        await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } });
+      } catch (e) {
+        console.error("Camera error:", e);
+      }
+
+      document.getElementById('start-overlay').classList.add('hidden');
+      document.getElementById('loading-overlay').classList.remove('hidden');
+
+      if (navigator.geolocation) {
+        const watchId = navigator.geolocation.watchPosition(
+          (pos) => {
+            const acc = Math.round(pos.coords.accuracy);
+            document.getElementById('gps-text').textContent =
+              '±' + acc + 'm';
+
+            if (acc <= 30) {
+              document.getElementById('gps-dot').classList.add('ready');
+              if (!gpsReady) {
+                gpsReady = true;
+                hideLoadingOverlay();
+              }
+            }
+          },
+          (err) => {
+            document.getElementById('gps-text').textContent = 'GPS error';
+            console.error("Geolocation error:", err);
+          },
+          { enableHighAccuracy: true, maximumAge: 0, timeout: 15000 }
+        );
+      } else {
+        document.getElementById('gps-text').textContent = 'No GPS API';
+      }
+
+      // Fallback: hide loading after 10 seconds regardless
+      setTimeout(hideLoadingOverlay, 10000);
+    }
+
+    function hideLoadingOverlay() {
+      const overlay = document.getElementById('loading-overlay');
+      if (overlay && !overlay.classList.contains('hidden')) {
+        overlay.classList.add('hidden');
+        // Inject art entity after overlay hides
+        if (isUnlocked) injectArtEntity();
+      }
+    }
+
+    // ── Inject AR entity ─────────────────────────────────────────────
+    function injectArtEntity() {
+      if (!mediaUrl || !lat || !lng) return;
+
+      const scene = document.getElementById('ar-scene');
+      const gpsAttr =
+        'latitude: ' + lat + '; longitude: ' + lng;
+
+      let entity;
+
+      if (mediaType === 'image') {
+        // Preload image as asset for reliability
+        const assets = document.createElement('a-assets');
+        const img = document.createElement('img');
+        img.id = 'arImg';
+        img.src = mediaUrl;
+        img.setAttribute('crossorigin', 'anonymous');
+        assets.appendChild(img);
+        scene.appendChild(assets);
+
+        entity = document.createElement('a-image');
+        entity.setAttribute('src', '#arImg');
+        entity.setAttribute('gps-projected-entity-place', gpsAttr);
+        entity.setAttribute('look-at', '[gps-projected-camera]');
+        entity.setAttribute('scale', '10 10 1');
+        entity.setAttribute('material',
+          'transparent: true; alphaTest: 0.1; side: double');
+
+      } else if (mediaType === 'video') {
+        const assets = document.createElement('a-assets');
+        const vid = document.createElement('video');
+        vid.id = 'arVideo';
+        vid.src = mediaUrl;
+        vid.setAttribute('autoplay', '');
+        vid.setAttribute('loop', '');
+        vid.setAttribute('crossorigin', 'anonymous');
+        vid.setAttribute('playsinline', '');
+        vid.setAttribute('webkit-playsinline', '');
+        vid.muted = false;
+        assets.appendChild(vid);
+        scene.appendChild(assets);
+
+        entity = document.createElement('a-video');
+        entity.setAttribute('src', '#arVideo');
+        entity.setAttribute('gps-projected-entity-place', gpsAttr);
+        entity.setAttribute('look-at', '[gps-projected-camera]');
+        entity.setAttribute('width', '16');
+        entity.setAttribute('height', '9');
+        entity.setAttribute('material', 'side: double');
+
+      } else if (mediaType === 'audio' || mediaType === 'voice') {
+        // Play audio via HTML element, show visual in AR
+        const audio = document.createElement('audio');
+        audio.src = mediaUrl;
+        audio.autoplay = true;
+        audio.loop = true;
+        document.body.appendChild(audio);
+
+        // AR visualiser — 4 animated bars
+        entity = document.createElement('a-entity');
+        entity.setAttribute('gps-projected-entity-place', gpsAttr);
+        entity.setAttribute('look-at', '[gps-projected-camera]');
+
+        const colors = ['#FF6B9D', '#4488FF', '#FFD700', '#44FF88'];
+        const positions = [-0.6, -0.2, 0.2, 0.6];
+        const durations = [400, 600, 500, 450];
+
+        positions.forEach((x, i) => {
+          const bar = document.createElement('a-box');
+          bar.setAttribute('color', colors[i]);
+          bar.setAttribute('position', x + ' 0 0');
+          bar.setAttribute('width', '0.2');
+          bar.setAttribute('height', '1');
+          bar.setAttribute('depth', '0.2');
+          bar.setAttribute('animation',
+            'property: scale; from: 1 0.5 1; to: 1 2 1; ' +
+            'dir: alternate; dur: ' + durations[i] + '; ' +
+            'loop: true; easing: easeInOutSine');
+          entity.appendChild(bar);
+        });
+
+      } else if (mediaType === 'model3d') {
+        entity = document.createElement('a-entity');
+        entity.setAttribute('gltf-model', mediaUrl);
+        entity.setAttribute('gps-projected-entity-place', gpsAttr);
+        entity.setAttribute('scale', '2 2 2');
+        entity.setAttribute('animation',
+          'property: rotation; from: 0 0 0; to: 0 360 0; ' +
+          'loop: true; dur: 8000; easing: linear');
+      }
+
+      if (entity) {
+        scene.appendChild(entity);
+      }
+    }
+  </script>
+
+</body>
+
+</html>

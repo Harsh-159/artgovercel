@@ -3,40 +3,29 @@ import { useNavigate, useParams, useLocation } from 'react-router-dom';
 import { getArtworks } from '../lib/firebase';
 import { Artwork } from '../lib/types';
 import { UnlockModal } from '../components/UnlockModal';
-import { clsx } from 'clsx';
-import { ArrowLeft, Maximize, Play, Pause } from 'lucide-react';
+import { Play, Pause } from 'lucide-react';
+import clsx from 'clsx';
 
-// Math Helpers
-const getDistance = (lat1: number, lon1: number, lat2: number, lon2: number) => {
-  const R = 6371e3;
-  const φ1 = lat1 * Math.PI / 180;
-  const φ2 = lat2 * Math.PI / 180;
-  const Δφ = (lat2 - lat1) * Math.PI / 180;
-  const Δλ = (lon2 - lon1) * Math.PI / 180;
-  const a = Math.sin(Δφ / 2) ** 2 + Math.cos(φ1) * Math.cos(φ2) * Math.sin(Δλ / 2) ** 2;
+function getDistance(lat1: number, lng1: number, lat2: number, lng2: number): number {
+  const R = 6371000;
+  const dLat = (lat2 - lat1) * Math.PI / 180;
+  const dLng = (lng2 - lng1) * Math.PI / 180;
+  const a = Math.sin(dLat / 2) ** 2 + Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) * Math.sin(dLng / 2) ** 2;
   return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-};
+}
 
-const getBearing = (lat1: number, lon1: number, lat2: number, lon2: number) => {
-  const φ1 = lat1 * Math.PI / 180;
-  const φ2 = lat2 * Math.PI / 180;
-  const λ1 = lon1 * Math.PI / 180;
-  const λ2 = lon2 * Math.PI / 180;
-  const y = Math.sin(λ2 - λ1) * Math.cos(φ2);
-  const x = Math.cos(φ1) * Math.sin(φ2) - Math.sin(φ1) * Math.cos(φ2) * Math.cos(λ2 - λ1);
-  const θ = Math.atan2(y, x);
-  return (θ * 180 / Math.PI + 360) % 360;
-};
-
-type ARMode = 'scanning' | 'surface-detection' | 'placed' | 'music-playing';
+function getBearing(lat1: number, lng1: number, lat2: number, lng2: number): number {
+  const dLng = (lng2 - lng1) * Math.PI / 180;
+  const y = Math.sin(dLng) * Math.cos(lat2 * Math.PI / 180);
+  const x = Math.cos(lat1 * Math.PI / 180) * Math.sin(lat2 * Math.PI / 180) - Math.sin(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) * Math.cos(dLng);
+  return ((Math.atan2(y, x) * 180 / Math.PI) + 360) % 360;
+}
 
 export const ARPage: React.FC = () => {
   const navigate = useNavigate();
   const { id } = useParams();
   const locationState = useLocation();
-  const [permissionGranted, setPermissionGranted] = useState<boolean | null>(null);
   const [artworks, setArtworks] = useState<Artwork[]>([]);
-  const [mode, setMode] = useState<ARMode>('scanning');
   const [selectedArtwork, setSelectedArtwork] = useState<Artwork | null>(null);
   const [lockedSelected, setLockedSelected] = useState<Artwork | null>(null);
 
@@ -47,6 +36,8 @@ export const ARPage: React.FC = () => {
   const transformRef = useRef<HTMLDivElement>(null);
   const streamRef = useRef<MediaStream | null>(null);
 
+  const [mode, setMode] = useState<'scanning' | 'surface-detection' | 'placed' | 'music-playing'>('scanning');
+  const [permissionGranted, setPermissionGranted] = useState(false);
   const [isPlaying, setIsPlaying] = useState(false);
   const [placedOrientation, setPlacedOrientation] = useState<{ heading: number, beta: number, gamma: number } | null>(null);
 
@@ -65,8 +56,6 @@ export const ARPage: React.FC = () => {
       if (!localStorage.getItem(lockKey)) {
         localStorage.setItem(lockKey, 'true');
         import('../lib/firebase').then(m => m.incrementUnlockCount(id)).catch(console.error);
-
-        // Remove params from URL cleanly without reloading
         window.history.replaceState({}, document.title, window.location.pathname);
       }
     }
@@ -77,25 +66,29 @@ export const ARPage: React.FC = () => {
     return () => unsub();
   }, []);
 
-  const requestPermissionsAndStart = async () => {
-    try {
-      // iOS 13+ DeviceOrientation request
-      if (typeof (DeviceOrientationEvent as any).requestPermission === 'function') {
-        const permissionState = await (DeviceOrientationEvent as any).requestPermission();
-        if (permissionState !== 'granted') {
-          navigate('/map');
-          return;
-        }
-      }
+  // Request camera + permissions
+  useEffect(() => {
+    const requestPermissions = async () => {
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' }, audio: false });
+        streamRef.current = stream;
 
-      const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } });
-      streamRef.current = stream;
-      setPermissionGranted(true);
-    } catch (err) {
-      console.error("AR Permission error", err);
-      navigate('/map');
-    }
-  };
+        if (typeof (DeviceOrientationEvent as any).requestPermission === 'function') {
+          const perm = await (DeviceOrientationEvent as any).requestPermission();
+          if (perm !== 'granted') return;
+        }
+
+        setPermissionGranted(true);
+      } catch (err) {
+        console.error('Permission error:', err);
+      }
+    };
+    requestPermissions();
+
+    return () => {
+      streamRef.current?.getTracks().forEach(t => t.stop());
+    };
+  }, []);
 
   useEffect(() => {
     if (permissionGranted && videoRef.current && streamRef.current) {
@@ -380,39 +373,7 @@ export const ARPage: React.FC = () => {
     }
   };
 
-  const quitAR = () => {
-    if (videoRef.current?.srcObject) {
-      (videoRef.current.srcObject as MediaStream).getTracks().forEach(t => t.stop());
-    }
-    navigate('/map');
-  };
-
-  if (permissionGranted === null) {
-    return (
-      <div className="h-screen bg-black text-white flex flex-col items-center justify-center p-6 text-center bg-[url('https://images.unsplash.com/photo-1550684848-fac1c5b4e853?q=80&w=2070')] bg-cover bg-center">
-        <div className="absolute inset-0 bg-black/70 backdrop-blur-sm z-0"></div>
-        <div className="relative z-10 w-full max-w-sm">
-          <div className="w-20 h-20 bg-accent rounded-full flex items-center justify-center mx-auto mb-8 animate-bounce shadow-[0_0_30px_rgba(68,136,255,0.8)]">
-            <Maximize size={32} />
-          </div>
-          <h1 className="text-3xl font-heading font-bold mb-4">Start AR Camera</h1>
-          <p className="mb-8 text-white/80">Explore the physical world. We need your Camera, GPS, and Compass to project art securely into your environment.</p>
-          <button
-            onClick={requestPermissionsAndStart}
-            className="bg-accent text-white px-8 py-4 rounded-full font-bold text-lg w-full shadow-[0_0_20px_rgba(68,136,255,0.4)] active:scale-95 transition-transform"
-          >
-            Enable AR Tracking
-          </button>
-          <button
-            onClick={() => navigate('/map')}
-            className="mt-4 bg-white/10 text-white px-8 py-4 rounded-full font-bold text-sm w-full"
-          >
-            Cancel
-          </button>
-        </div>
-      </div>
-    );
-  }
+  const quitAR = () => navigate('/map');
 
   return (
     <div className="w-full h-screen bg-black relative overflow-hidden" onClick={mode === 'surface-detection' ? handleSurfaceTap : undefined}>
@@ -515,31 +476,28 @@ export const ARPage: React.FC = () => {
 
       {/* Back Button */}
       <button
-        onClick={() => {
-          if (mode !== 'scanning') {
-            setMode('scanning');
-            setSelectedArtwork(null);
-            audioRef.current?.pause();
-            setIsPlaying(false);
-          } else {
-            quitAR();
-          }
-        }}
+        onClick={quitAR}
         className="absolute top-6 left-6 w-12 h-12 bg-black/50 backdrop-blur-md rounded-full flex items-center justify-center border border-white/10 pointer-events-auto hover:bg-white/20 z-50 text-white shadow-lg active:scale-95 transition-all"
       >
-        <ArrowLeft className="w-6 h-6" />
+        <svg xmlns="http://www.w3.org/2000/svg" className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+          <path strokeLinecap="round" strokeLinejoin="round" d="M15 19l-7-7 7-7" />
+        </svg>
       </button>
+
+      {/* Hidden audio element */}
+      <audio ref={audioRef} />
 
       {/* Unlock Dialog for Paid Items */}
       {lockedSelected && (
         <UnlockModal
           artwork={lockedSelected}
-          onUnlock={() => setLockedSelected(null)}
-          onCancel={() => setLockedSelected(null)}
+          onUnlock={() => {
+            setLockedSelected(null);
+            setSelectedArtwork(lockedSelected);
+          }}
+          onCancel={quitAR}
         />
       )}
-
-      <audio ref={audioRef} loop className="hidden" />
     </div>
   );
 };

@@ -503,9 +503,10 @@
 
   <button id="back-btn" onclick="goBack()">← Back</button>
 
-  <div id="gps-status">
+  <div id="gps-status" onclick="testVibration()" title="Tap to test vibration">
     <div class="gps-dot" id="gps-dot"></div>
     <span id="gps-text">Locating...</span>
+    <span id="dist-text" style="margin-left:4px;color:#FFD700;display:none"></span>
   </div>
 
   <div id="info-bar">
@@ -567,11 +568,22 @@
     // Key format: `${artworkId}_${threshold}` e.g. "abc123_50"
     const firedThresholds = new Set();
     const THRESHOLDS = [
-      { dist: 5, key: '5', vibration: [80, 60, 80, 60, 80], flashClass: 'flash-5' },
-      { dist: 20, key: '20', vibration: [60, 50, 60], flashClass: 'flash-20' },
-      { dist: 50, key: '50', vibration: [40], flashClass: 'flash-50' },
+      { dist: 5,  key: '5',  vibration: [200, 100, 200, 100, 400], flashClass: 'flash-5'  },
+      { dist: 20, key: '20', vibration: [150, 100, 150],            flashClass: 'flash-20' },
+      { dist: 50, key: '50', vibration: [100],                      flashClass: 'flash-50' },
     ];
     const supportsVibration = typeof navigator.vibrate === 'function';
+    console.log('[Proximity] navigator.vibrate supported:', supportsVibration);
+
+    function testVibration() {
+      if (supportsVibration) {
+        navigator.vibrate([200, 100, 200]);
+        console.log('[Proximity] Test vibration fired');
+      } else {
+        triggerProximityAlert('flash-20', []);
+        console.log('[Proximity] Test flash fired (no vibration API)');
+      }
+    }
 
     function haversineDistance(lat1, lng1, lat2, lng2) {
       const R = 6371000;
@@ -603,23 +615,31 @@
 
       const dist = haversineDistance(userLat, userLng, artLat, artLng);
 
+      // Show live distance in GPS badge
+      const distEl = document.getElementById('dist-text');
+      if (distEl) {
+        distEl.style.display = 'inline';
+        distEl.textContent = Math.round(dist) + 'm away';
+      }
+
       // Check thresholds from smallest to largest (inner takes priority)
       for (const t of THRESHOLDS) {
         const fireKey = artworkId + '_' + t.key;
         const resetKey = artworkId + '_reset_' + t.key;
-        const buffer = t.dist + 10; // 10m hysteresis
+        const buffer = t.dist + 10;
 
         if (dist <= t.dist) {
           if (!firedThresholds.has(fireKey)) {
             firedThresholds.add(fireKey);
-            firedThresholds.delete(resetKey); // armed for next exit
+            firedThresholds.delete(resetKey);
+            console.log('[Proximity] Threshold ' + t.key + 'm crossed! dist=' + Math.round(dist) + 'm');
             triggerProximityAlert(t.flashClass, t.vibration);
           }
         } else if (dist > buffer) {
-          // User walked back out beyond threshold + buffer — reset so it fires again on re-entry
           if (!firedThresholds.has(resetKey)) {
             firedThresholds.add(resetKey);
             firedThresholds.delete(fireKey);
+            console.log('[Proximity] Reset threshold ' + t.key + 'm (dist=' + Math.round(dist) + 'm)');
           }
         }
       }

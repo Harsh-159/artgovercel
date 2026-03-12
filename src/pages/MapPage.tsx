@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useRef } from 'react';
-import Map, { Marker, MapRef } from 'react-map-gl';
+import Map, { Marker, MapRef, Source, Layer } from 'react-map-gl';
 import { useNavigate } from 'react-router-dom';
 import { getArtworks } from '../lib/firebase';
 import { Artwork } from '../lib/types';
@@ -16,7 +16,8 @@ export const MapPage: React.FC = () => {
   const [artworks, setArtworks] = useState<Artwork[]>([]);
   const [selectedArtwork, setSelectedArtwork] = useState<Artwork | null>(null);
   const [locationFetched, setLocationFetched] = useState(false);
-  const [viewState, setViewState] = useState<{ longitude: number; latitude: number; zoom: number } | null>(null);
+  const [is3D, setIs3D] = useState(false);
+  const [viewState, setViewState] = useState<{ longitude: number; latitude: number; zoom: number; pitch?: number; bearing?: number } | null>(null);
   const navigate = useNavigate();
 
   const [userLocation, setUserLocation] = useState<{ lat: number, lng: number } | null>(null);
@@ -29,12 +30,12 @@ export const MapPage: React.FC = () => {
     const stopWatching = getLocationFast(
       ({ lat, lng }) => {
         setUserLocation({ lat, lng });
-        setViewState({ longitude: lng, latitude: lat, zoom: 15 });
+        setViewState({ longitude: lng, latitude: lat, zoom: 15, pitch: 60, bearing: -20 });
         setLocationFetched(true);
       },
       () => {
         // Location denied/unavailable — show map at a generic default
-        setViewState({ longitude: 0, latitude: 20, zoom: 2 });
+        setViewState({ longitude: 0, latitude: 20, zoom: 2, pitch: 0, bearing: 0 });
         setLocationFetched(true);
       }
     );
@@ -74,6 +75,21 @@ export const MapPage: React.FC = () => {
 
   const handleOrbClick = (artwork: Artwork) => {
     setSelectedArtwork(artwork);
+  };
+
+  const toggle3D = () => {
+    const map = mapRef.current?.getMap();
+    if (!map) return;
+    const next3D = !is3D;
+    setIs3D(next3D);
+    map.flyTo({
+      pitch: next3D ? 60 : 0,
+      bearing: 0,
+      duration: 600,
+      easing: (t: number) => t < 0.5 ? 2*t*t : -1+(4-2*t)*t,
+    });
+    // Let Mapbox recalculate tile grid after transition
+    setTimeout(() => map.resize(), 650);
   };
 
   if (!locationFetched) {
@@ -159,6 +175,45 @@ export const MapPage: React.FC = () => {
             <Orb artwork={artwork} onClick={() => handleOrbClick(artwork)} />
           </Marker>
         ))}
+
+        {/* 3D Buildings Layer */}
+        <Layer
+          id="3d-buildings"
+          source="composite"
+          source-layer="building"
+          filter={['==', 'extrude', 'true']}
+          type="fill-extrusion"
+          minzoom={15}
+          paint={{
+            'fill-extrusion-color': '#1A1A24',
+            'fill-extrusion-height': ['get', 'height'],
+            'fill-extrusion-base': ['get', 'min_height'],
+            'fill-extrusion-opacity': 0.8
+          }}
+        />
+
+        {/* Water Layer Styling */}
+        <Layer
+          id="water-styling"
+          source="composite"
+          source-layer="water"
+          type="fill"
+          paint={{
+            'fill-color': '#0A1930'
+          }}
+        />
+
+        {/* Parks / Landuse Layer Styling */}
+        <Layer
+          id="parks-styling"
+          source="composite"
+          source-layer="landuse"
+          filter={['any', ['==', 'class', 'park'], ['==', 'class', 'pitch']]}
+          type="fill"
+          paint={{
+            'fill-color': '#0F2514'
+          }}
+        />
       </Map>
 
       {/* Bottom Sheet Preview */}
@@ -198,6 +253,15 @@ export const MapPage: React.FC = () => {
           </div>
         )}
       </div>
+
+      {/* 2D / 3D Toggle */}
+      <button
+        onClick={toggle3D}
+        className="absolute bottom-24 right-4 z-20 w-12 h-12 flex flex-col items-center justify-center gap-0.5 rounded-2xl border border-[#FFD700]/30 bg-black/70 backdrop-blur-md shadow-lg hover:bg-[#FFD700]/10 transition-all active:scale-95"
+      >
+        <span className="text-[#FFD700] text-xs font-bold font-mono leading-none">{is3D ? '2D' : '3D'}</span>
+        <span className="text-[10px] text-[#FFD700]/50 leading-none">{is3D ? 'flat' : 'tilt'}</span>
+      </button>
 
       <Navigation />
     </div>

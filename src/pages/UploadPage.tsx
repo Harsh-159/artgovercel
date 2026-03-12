@@ -35,6 +35,7 @@ export const UploadPage: React.FC = () => {
   const [description, setDescription] = useState('');
   const [aiLoading, setAiLoading] = useState(false);
   const [uploadedFile, setUploadedFile] = useState<File | null>(null);
+  const [appearDuring, setAppearDuring] = useState<string[]>(['Always']);
 
   const [pricingModel, setPricingModel] = useState<'free' | 'paid'>('free');
   const [tiers, setTiers] = useState({
@@ -217,6 +218,7 @@ export const UploadPage: React.FC = () => {
         description,
         artistId: auth?.currentUser?.uid || 'demo-user',
         category,
+        appearDuring,
         mediaUrl,
         mediaType,
         lat: location.lat,
@@ -310,16 +312,6 @@ export const UploadPage: React.FC = () => {
             />
           </div>
           <div>
-            <label className="block text-sm font-bold text-text-secondary mb-2 uppercase tracking-wider">Artist</label>
-            <input
-              type="text"
-              value={artistName}
-              onChange={e => setArtistName(e.target.value)}
-              className="w-full bg-surface border border-white/10 rounded-xl p-4 text-white focus:outline-none focus:border-accent transition-colors"
-              placeholder="Your name..."
-            />
-          </div>
-          <div>
             <label className="block text-sm font-bold text-text-secondary mb-2 uppercase tracking-wider">Description</label>
             <textarea
               ref={descRef}
@@ -372,6 +364,39 @@ export const UploadPage: React.FC = () => {
               </button>
             ))}
           </div>
+        </div>
+
+        {/* Environmental Conditions */}
+        <div>
+          <label className="block text-sm font-bold text-text-secondary mb-2 uppercase tracking-wider">Only appear during</label>
+          <div className="flex flex-wrap gap-2">
+            {['Always', 'Day', 'Night', 'Rain', 'Summer'].map(condition => (
+              <button
+                key={condition}
+                type="button"
+                onClick={() => {
+                  if (condition === 'Always') {
+                    setAppearDuring(['Always']);
+                  } else {
+                    const newConditions = appearDuring.filter(c => c !== 'Always');
+                    if (newConditions.includes(condition)) {
+                      const filtered = newConditions.filter(c => c !== condition);
+                      setAppearDuring(filtered.length === 0 ? ['Always'] : filtered);
+                    } else {
+                      setAppearDuring([...newConditions, condition]);
+                    }
+                  }
+                }}
+                className={clsx(
+                  "px-4 py-2 rounded-full text-sm font-bold transition-all border",
+                  appearDuring.includes(condition) ? "bg-accent/20 text-accent border-accent" : "bg-transparent text-text-secondary border-white/10 hover:border-white/30"
+                )}
+              >
+                {condition}
+              </button>
+            ))}
+          </div>
+          <p className="text-xs text-text-secondary mt-2 italic">Controls when the artwork is visible in the physical world.</p>
         </div>
 
         {/* Media */}

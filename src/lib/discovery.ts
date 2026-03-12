@@ -58,9 +58,7 @@ export const matchArtworks = (
             const kw = prefs.keyword.toLowerCase();
             return (
                 a.title.toLowerCase().includes(kw) ||
-                (a.description && a.description.toLowerCase().includes(kw)) ||
-                a.artistName.toLowerCase().includes(kw) ||
-                a.category.toLowerCase().includes(kw)
+                (a.description && a.description.toLowerCase().includes(kw))
             );
         })
         .map(a => {

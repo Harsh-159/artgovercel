@@ -174,7 +174,8 @@ export const UnlockModal: React.FC<{
       localStorage.setItem(`unlocked_${artwork.id}`, 'true');
       localStorage.setItem(`owned_${artwork.id}`, cert.tokenId);
       try { await incrementUnlockCount(artwork.id); } catch (err) { }
-      setStage('success');
+      // Immediate redirect to Certificate bypassing intermediate UI
+      navigate(`/certificate/${cert.tokenId}`);
     }
   };
 

@@ -728,7 +728,7 @@
 
         if (mediaType === 'image') {
           entityMarkup = `
-            <a-assets timeout="10000">
+            <a-assets timeout="60000">
               <img id="arImg" src="${mediaUrl}" crossorigin="anonymous">
             </a-assets>
             <a-image
@@ -741,7 +741,7 @@
 
         } else if (mediaType === 'video') {
           entityMarkup = `
-            <a-assets timeout="10000">
+            <a-assets timeout="60000">
               <video id="arVideo" src="${mediaUrl}" autoplay loop crossorigin="anonymous" playsinline webkit-playsinline muted></video>
             </a-assets>
             <a-video

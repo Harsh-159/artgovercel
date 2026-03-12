@@ -43,6 +43,7 @@ export const ARPage: React.FC = () => {
   const audioRef = useRef<HTMLAudioElement>(null);
   const musicUIRef = useRef<HTMLDivElement>(null);
   const transformRef = useRef<HTMLDivElement>(null);
+  const streamRef = useRef<MediaStream | null>(null);
   
   const [isPlaying, setIsPlaying] = useState(false);
   const [placedOrientation, setPlacedOrientation] = useState<{ beta: number, gamma: number } | null>(null);
@@ -70,15 +71,19 @@ export const ARPage: React.FC = () => {
       }
 
       const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } });
-      if (videoRef.current) {
-        videoRef.current.srcObject = stream;
-      }
+      streamRef.current = stream;
       setPermissionGranted(true);
     } catch (err) {
       console.error("AR Permission error", err);
       navigate('/map');
     }
   };
+
+  useEffect(() => {
+    if (permissionGranted && videoRef.current && streamRef.current) {
+      videoRef.current.srcObject = streamRef.current;
+    }
+  }, [permissionGranted]);
 
   useEffect(() => {
     if (!permissionGranted) return;
@@ -94,6 +99,7 @@ export const ARPage: React.FC = () => {
     };
 
     window.addEventListener('deviceorientation', handleOrientation);
+    window.addEventListener('deviceorientationabsolute', handleOrientation); // Important for Android true compass
 
     const watchId = navigator.geolocation.watchPosition(
       (pos) => {
@@ -105,6 +111,7 @@ export const ARPage: React.FC = () => {
 
     return () => {
       window.removeEventListener('deviceorientation', handleOrientation);
+      window.removeEventListener('deviceorientationabsolute', handleOrientation);
       navigator.geolocation.clearWatch(watchId);
     };
   }, [permissionGranted]);
@@ -124,15 +131,23 @@ export const ARPage: React.FC = () => {
         const canvas = canvasRef.current;
         const ctx = canvas?.getContext('2d');
         if (canvas && ctx) {
-          const { width, height } = canvas;
           if (canvas.width !== window.innerWidth || canvas.height !== window.innerHeight) {
             canvas.width = window.innerWidth;
             canvas.height = window.innerHeight;
           }
+          const width = canvas.width;
+          const height = canvas.height;
           ctx.clearRect(0, 0, width, height);
 
           const visibleOrbs: any[] = [];
-          if (loc) {
+          
+          if (!loc) {
+            ctx.font = 'bold 16px sans-serif';
+            ctx.fillStyle = 'rgba(255,255,255,0.7)';
+            ctx.textAlign = 'center';
+            ctx.fillText('WAITING FOR GPS SIGNAL...', width / 2, height / 2);
+          } else {
+            let foundAny = false;
             artworks.forEach(art => {
               const dist = getDistance(loc.lat, loc.lng, art.lat, art.lng);
               const bearing = getBearing(loc.lat, loc.lng, art.lat, art.lng);
@@ -143,6 +158,7 @@ export const ARPage: React.FC = () => {
 
               // Only render if within 60 degrees of view
               if (Math.abs(diff) <= 60) {
+                foundAny = true;
                 const x = ((diff + 60) / 120) * width;
                 const y = height / 2;
 
@@ -183,6 +199,18 @@ export const ARPage: React.FC = () => {
                 }
               }
             });
+            
+            // Helpful debug text
+            ctx.font = '12px sans-serif';
+            ctx.fillStyle = 'rgba(255,255,255,0.5)';
+            ctx.textAlign = 'left';
+            ctx.fillText(`GPS: ${loc.lat.toFixed(4)}, ${loc.lng.toFixed(4)}`, 20, 30);
+            ctx.fillText(`Heading: ${Math.round(heading)}°`, 20, 50);
+            ctx.fillText(`Artworks Total: ${artworks.length}`, 20, 70);
+            if (!foundAny && artworks.length > 0) {
+              ctx.textAlign = 'center';
+              ctx.fillText('Look around! Move your phone.', width / 2, height / 2 + 50);
+            }
           }
           stateRef.current.visibleOrbs = visibleOrbs;
         }

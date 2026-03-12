@@ -37,6 +37,7 @@ export const UploadPage: React.FC = () => {
   const [expiresIn24h, setExpiresIn24h] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
+  const [locationFetched, setLocationFetched] = useState(false);
   const [viewState, setViewState] = useState({
     longitude: state?.lng || 0.1218,
     latitude: state?.lat || 52.2053,
@@ -80,9 +81,16 @@ export const UploadPage: React.FC = () => {
              latitude: pos.coords.latitude,
              zoom: 15
            });
+           setLocationFetched(true);
         },
-        (err) => console.error(err)
+        (err) => {
+          console.error(err);
+          setLocationFetched(true); // fallback
+        },
+        { timeout: 5000, maximumAge: 0 }
       );
+    } else {
+      setLocationFetched(true); // fallback or already have state
     }
 
     return () => unsubAuth?.();
@@ -161,6 +169,15 @@ export const UploadPage: React.FC = () => {
         >
           View on Map
         </button>
+      </div>
+    );
+  }
+
+  if (!locationFetched) {
+    return (
+      <div className="min-h-screen bg-background flex flex-col items-center justify-center text-white font-bold pb-24">
+        <div className="w-12 h-12 border-4 border-white/20 border-t-accent rounded-full animate-spin mb-4"></div>
+        <p>Locating you...</p>
       </div>
     );
   }

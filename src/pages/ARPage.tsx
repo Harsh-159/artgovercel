@@ -35,9 +35,28 @@ export const ARPage: React.FC = () => {
   const [isLocked, setIsLocked] = useState(false);
   const [showToast, setShowToast] = useState(false);
   const [showDrawer, setShowDrawer] = useState(true);
+  const [distanceToArt, setDistanceToArt] = useState<number | null>(null);
+  const [isCloseEnough, setIsCloseEnough] = useState(false);
   const sceneRef = useRef<HTMLDivElement>(null);
 
   const isModelViewerMediaType = artwork?.mediaType === 'image';
+  const MAX_PLACEMENT_DISTANCE_METERS = 30; // 30m required to unlock placement
+
+  // Haversine formula
+  const getDistanceInMeters = (lat1: number, lon1: number, lat2: number, lon2: number) => {
+    const R = 6371e3; // metres
+    const φ1 = lat1 * Math.PI / 180; // φ, λ in radians
+    const φ2 = lat2 * Math.PI / 180;
+    const Δφ = (lat2 - lat1) * Math.PI / 180;
+    const Δλ = (lon2 - lon1) * Math.PI / 180;
+
+    const a = Math.sin(Δφ / 2) * Math.sin(Δφ / 2) +
+            Math.cos(φ1) * Math.cos(φ2) *
+            Math.sin(Δλ / 2) * Math.sin(Δλ / 2);
+    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+
+    return R * c; // in metres
+  };
 
   useEffect(() => {
     if (id) {
@@ -55,6 +74,25 @@ export const ARPage: React.FC = () => {
       });
     }
   }, [id]);
+
+  useEffect(() => {
+    let watchId: number;
+    if (artwork && navigator.geolocation) {
+      // Continuously track moving user
+      watchId = navigator.geolocation.watchPosition(
+        (pos) => {
+          const dist = getDistanceInMeters(pos.coords.latitude, pos.coords.longitude, artwork.lat, artwork.lng);
+          setDistanceToArt(dist);
+          setIsCloseEnough(dist <= MAX_PLACEMENT_DISTANCE_METERS);
+        },
+        (err) => console.error("Location tracking error", err),
+        { enableHighAccuracy: true, maximumAge: 0, timeout: 5000 }
+      );
+    }
+    return () => {
+      if (watchId) navigator.geolocation.clearWatch(watchId);
+    };
+  }, [artwork]);
 
   useEffect(() => {
     const handleOrbTap = () => setShowDrawer(prev => !prev);
@@ -88,6 +126,10 @@ export const ARPage: React.FC = () => {
 
                 // Listen for tap/clicks to place the object
                 this.el.sceneEl.addEventListener('click', () => {
+                  // Only allow placement if close enough!
+                  const closeEnough = document.getElementById('scene-wrapper')?.dataset.closeEnough === 'true';
+                  if (!closeEnough) return;
+
                   if (!this.reticle.components['ar-hit-test'].hasFound) return;
                   if (this.isPlaced) return; // Only place once
 
@@ -106,10 +148,20 @@ export const ARPage: React.FC = () => {
                 });
               },
               tick: function() {
+                  const closeEnough = document.getElementById('scene-wrapper')?.dataset.closeEnough === 'true';
+                  
+                  // Hide reticle tracking functionality entirely if not close enough
+                  if (!closeEnough) {
+                    this.reticle.setAttribute('visible', 'false');
+                    this.orb.setAttribute('visible', 'false');
+                    return;
+                  }
+
                   // Keep the orb positioned slightly above the reticle for scanning phase
                   if (!this.isPlaced && this.reticle.components['ar-hit-test'].hasFound) {
                       const pos = this.reticle.getAttribute('position');
                       this.orb.setAttribute('position', `${pos.x} ${pos.y + 1} ${pos.z}`);
+                      this.orb.setAttribute('visible', 'true');
                   }
               }
             });
@@ -173,7 +225,7 @@ export const ARPage: React.FC = () => {
           </a-entity>
 
           <!-- Initial Orb (floats above reticle before placement) -->
-          <a-entity id="initial-orb" position="0 1 -3">
+          <a-entity id="initial-orb" position="0 1 -3" visible="false">
              <a-sphere radius="0.2" color="#ffffff" material="opacity: 0.8; transparent: true; emissive: #ffffff; emissiveIntensity: 0.5"></a-sphere>
              <a-entity text="value: Tap to Place; color: white; align: center; width: 4" position="0 0.4 0"></a-entity>
           </a-entity>
@@ -206,31 +258,42 @@ export const ARPage: React.FC = () => {
   if (!artwork) return <div className="h-screen bg-background flex items-center justify-center text-white">Loading...</div>;
 
   return (
-    <div className="w-full h-screen bg-black relative overflow-hidden">
+    <div id="scene-wrapper" data-close-enough={isCloseEnough} className="w-full h-screen bg-black relative overflow-hidden">
       {/* 3D Model Viewer for Native AR Images/Visual Art */}
       {!isLocked && isModelViewerMediaType && (
         <div className="absolute inset-0 z-0 bg-surface flex items-center justify-center">
-            {/* Using a default frame for 2D images, in a real app you'd map the image texture dynamically to a .glb */}
-             {React.createElement('model-viewer', {
-                 src: "https://modelviewer.dev/shared-assets/models/Astronaut.glb", // Generic placeholder
-                 iosSrc: "https://modelviewer.dev/shared-assets/models/Astronaut.usdz", 
-                 ar: "true",
-                 'ar-modes': "webxr scene-viewer quick-look",
-                 'camera-controls': "true",
-                 'auto-rotate': "true",
-                 style: { width: '100%', height: '100%' },
-                 alt: artwork.title,
-                 'ar-placement': "floor" // floor or wall
-             })}
+             {isCloseEnough ? (
+               // Using a default frame for 2D images, in a real app you'd map the image texture dynamically to a .glb
+               React.createElement('model-viewer', {
+                   src: "https://modelviewer.dev/shared-assets/models/Astronaut.glb", // Generic placeholder
+                   iosSrc: "https://modelviewer.dev/shared-assets/models/Astronaut.usdz", 
+                   ar: "true",
+                   'ar-modes': "webxr scene-viewer quick-look",
+                   'camera-controls': "true",
+                   'auto-rotate': "true",
+                   style: { width: '100%', height: '100%' },
+                   alt: artwork.title,
+                   'ar-placement': "floor" // floor or wall
+               })
+             ) : (
+                <div className="text-white text-center p-6 bg-black/50 backdrop-blur rounded-2xl w-3/4 max-w-sm">
+                   <h3 className="font-bold text-xl mb-4 text-accent animate-pulse">Walk Closer...</h3>
+                   <div className="w-16 h-16 border-4 border-white/20 border-t-accent rounded-full animate-spin mx-auto mb-4"></div>
+                   <p>You must find the physical location to view this Art piece.</p>
+                </div>
+             )}
              
-             {/* Simple hack to show actual image beside the 3D model since we're using a generic model */}
-             <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-64 h-64 pointer-events-none opacity-50 z-[-1]">
-                <img src={artwork.mediaUrl} alt="Artwork" className="w-full h-full object-cover rounded-xl shadow-2xl" />
-             </div>
+             {isCloseEnough && (
+               <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-64 h-64 pointer-events-none opacity-50 z-[-1]">
+                  <img src={artwork.mediaUrl} alt="Artwork" className="w-full h-full object-cover rounded-xl shadow-2xl" />
+               </div>
+             )}
              
-             <div className="absolute top-24 left-1/2 -translate-x-1/2 bg-black/60 px-4 py-2 rounded-full text-white text-xs z-10 font-bold backdrop-blur">
-               Native AR Mode - Tap icon bottom right to place
-             </div>
+             {isCloseEnough && (
+               <div className="absolute top-24 left-1/2 -translate-x-1/2 bg-black/60 px-4 py-2 rounded-full text-white text-xs z-10 font-bold backdrop-blur">
+                 Native AR Mode - Tap icon bottom right to place
+               </div>
+             )}
         </div>
       )}
 

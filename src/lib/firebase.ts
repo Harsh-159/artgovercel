@@ -6,7 +6,7 @@ import { Artwork } from './types';
 
 const firebaseConfig = {
   apiKey: import.meta.env.VITE_FIREBASE_API_KEY || "demo",
-  authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN || "demo",
+  authDomain: "artgo-ai.vercel.app",
   projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID || "demo",
   storageBucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET || "demo",
   messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID || "demo",

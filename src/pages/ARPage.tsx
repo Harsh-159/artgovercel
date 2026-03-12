@@ -101,7 +101,7 @@ export const ARPage: React.FC = () => {
   }, []);
 
   useEffect(() => {
-    if (artwork && !isLocked && !isModelViewerMediaType && sceneRef.current) {
+    if (artwork && !isLocked && sceneRef.current) {
       
       // Register custom WebXR Hit Test component for our specific use-case if not already registered
       if (typeof window !== 'undefined' && !(window as any).hasRegisteredHitTest) {
@@ -175,7 +175,17 @@ export const ARPage: React.FC = () => {
       // Prepare the Artwork representation (Audio/Video generic drops)
       let artworkHtml = '';
 
-      if (artwork.mediaType === 'video') {
+      if (artwork.mediaType === 'image') {
+        artworkHtml = `
+          <a-image
+            src="${artwork.mediaUrl}"
+            class="clickable"
+            cursor-listener
+            position="0 1 0"
+            width="2" height="2">
+          </a-image>
+        `;
+      } else if (artwork.mediaType === 'video') {
         artworkHtml = `
           <a-assets>
             <video id="arVideo" src="${artwork.mediaUrl}" autoplay loop crossorigin="anonymous" playsinline></video>
@@ -247,7 +257,7 @@ export const ARPage: React.FC = () => {
         return () => audio.pause();
       }
     }
-  }, [artwork, isLocked, isModelViewerMediaType]);
+  }, [artwork, isLocked]);
 
   const handleUnlock = () => {
     setIsLocked(false);
@@ -259,46 +269,23 @@ export const ARPage: React.FC = () => {
 
   return (
     <div id="scene-wrapper" data-close-enough={isCloseEnough} className="w-full h-screen bg-black relative overflow-hidden">
-      {/* 3D Model Viewer for Native AR Images/Visual Art */}
-      {!isLocked && isModelViewerMediaType && (
-        <div className="absolute inset-0 z-0 bg-surface flex items-center justify-center">
-             {isCloseEnough ? (
-               // Using a default frame for 2D images, in a real app you'd map the image texture dynamically to a .glb
-               React.createElement('model-viewer', {
-                   src: "https://modelviewer.dev/shared-assets/models/Astronaut.glb", // Generic placeholder
-                   iosSrc: "https://modelviewer.dev/shared-assets/models/Astronaut.usdz", 
-                   ar: "true",
-                   'ar-modes': "webxr scene-viewer quick-look",
-                   'camera-controls': "true",
-                   'auto-rotate': "true",
-                   style: { width: '100%', height: '100%' },
-                   alt: artwork.title,
-                   'ar-placement': "floor" // floor or wall
-               })
-             ) : (
-                <div className="text-white text-center p-6 bg-black/50 backdrop-blur rounded-2xl w-3/4 max-w-sm">
-                   <h3 className="font-bold text-xl mb-4 text-accent animate-pulse">Walk Closer...</h3>
-                   <div className="w-16 h-16 border-4 border-white/20 border-t-accent rounded-full animate-spin mx-auto mb-4"></div>
-                   <p>You must find the physical location to view this Art piece.</p>
+      
+      {!isCloseEnough && (
+          <div className="absolute inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur pointer-events-none">
+            <div className="text-white text-center p-6 w-3/4 max-w-sm flex flex-col items-center">
+                <h3 className="font-bold text-2xl mb-4 text-accent animate-pulse">Walk Closer...</h3>
+                <div className="relative w-24 h-24 mb-6">
+                  <div className="absolute inset-0 border-4 border-white/20 border-t-accent rounded-full animate-spin"></div>
+                  <div className="absolute inset-0 flex items-center justify-center">📍</div>
                 </div>
-             )}
-             
-             {isCloseEnough && (
-               <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-64 h-64 pointer-events-none opacity-50 z-[-1]">
-                  <img src={artwork.mediaUrl} alt="Artwork" className="w-full h-full object-cover rounded-xl shadow-2xl" />
-               </div>
-             )}
-             
-             {isCloseEnough && (
-               <div className="absolute top-24 left-1/2 -translate-x-1/2 bg-black/60 px-4 py-2 rounded-full text-white text-xs z-10 font-bold backdrop-blur">
-                 Native AR Mode - Tap icon bottom right to place
-               </div>
-             )}
-        </div>
+                <p className="text-lg">Distance: {distanceToArt ? Math.round(distanceToArt) : '...'}m</p>
+                <p className="text-sm text-text-secondary mt-2">Find the physical location to view this Art piece. {MAX_PLACEMENT_DISTANCE_METERS}m required.</p>
+            </div>
+          </div>
       )}
 
       {/* AR Scene Container (A-Frame) */}
-      {!isLocked && !isModelViewerMediaType && (
+      {!isLocked && (
         <div ref={sceneRef} className="absolute inset-0 z-0" />
       )}
 

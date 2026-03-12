@@ -47,6 +47,25 @@
       background: #000;
     }
 
+    /* CRITICAL FIX: Prevent AR.js from shifting the video off-screen */
+    #arjs-video,
+    body>video {
+      position: fixed !important;
+      top: 0 !important;
+      left: 0 !important;
+      width: 100vw !important;
+      height: 100vh !important;
+      margin: 0 !important;
+      padding: 0 !important;
+      transform: none !important;
+      object-fit: cover !important;
+      z-index: -999 !important;
+    }
+
+    .a-canvas {
+      background-color: transparent !important;
+    }
+
     #back-btn {
       position: fixed;
       top: env(safe-area-inset-top, 16px);
@@ -394,27 +413,69 @@
     }
 
     @keyframes proximityFlash50 {
-      0%   { opacity: 0; }
-      20%  { opacity: 1; }
-      100% { opacity: 0; }
+      0% {
+        opacity: 0;
+      }
+
+      20% {
+        opacity: 1;
+      }
+
+      100% {
+        opacity: 0;
+      }
     }
 
     @keyframes proximityFlash20 {
-      0%   { opacity: 0; }
-      15%  { opacity: 1; }
-      45%  { opacity: 0; }
-      60%  { opacity: 0.8; }
-      100% { opacity: 0; }
+      0% {
+        opacity: 0;
+      }
+
+      15% {
+        opacity: 1;
+      }
+
+      45% {
+        opacity: 0;
+      }
+
+      60% {
+        opacity: 0.8;
+      }
+
+      100% {
+        opacity: 0;
+      }
     }
 
     @keyframes proximityFlash5 {
-      0%   { opacity: 0; }
-      12%  { opacity: 1; }
-      28%  { opacity: 0; }
-      44%  { opacity: 1; }
-      60%  { opacity: 0; }
-      76%  { opacity: 1; }
-      100% { opacity: 0; }
+      0% {
+        opacity: 0;
+      }
+
+      12% {
+        opacity: 1;
+      }
+
+      28% {
+        opacity: 0;
+      }
+
+      44% {
+        opacity: 1;
+      }
+
+      60% {
+        opacity: 0;
+      }
+
+      76% {
+        opacity: 1;
+      }
+
+      100% {
+        opacity: 0;
+      }
     }
   </style>
 </head>
@@ -487,9 +548,9 @@
     // Key format: `${artworkId}_${threshold}` e.g. "abc123_50"
     const firedThresholds = new Set();
     const THRESHOLDS = [
-      { dist: 5,  key: '5',  vibration: [80, 60, 80, 60, 80],  flashClass: 'flash-5'  },
-      { dist: 20, key: '20', vibration: [60, 50, 60],           flashClass: 'flash-20' },
-      { dist: 50, key: '50', vibration: [40],                   flashClass: 'flash-50' },
+      { dist: 5, key: '5', vibration: [80, 60, 80, 60, 80], flashClass: 'flash-5' },
+      { dist: 20, key: '20', vibration: [60, 50, 60], flashClass: 'flash-20' },
+      { dist: 50, key: '50', vibration: [40], flashClass: 'flash-50' },
     ];
     const supportsVibration = typeof navigator.vibrate === 'function';
 
@@ -498,8 +559,8 @@
       const dLat = (lat2 - lat1) * Math.PI / 180;
       const dLng = (lng2 - lng1) * Math.PI / 180;
       const a = Math.sin(dLat / 2) ** 2 +
-                Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
-                Math.sin(dLng / 2) ** 2;
+        Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
+        Math.sin(dLng / 2) ** 2;
       return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
     }
 
@@ -710,20 +771,12 @@
       }
 
       /*
-        CRITICAL FIX: Inject <a-scene> as first child of <body>, NOT
-        inside a wrapper div. A-Frame must own <body> to correctly
-        size its canvas to 100vw/100vh on mobile.
-
-        CRITICAL FIX: videoTexture: false — AR.js renders camera as a
-        real <video> DOM element (not WebGL texture). Far more reliable
-        on Android Chrome where WebGL texture camera fails silently.
-
-        No 'embedded' attribute — A-Frame takes full viewport ownership.
+        CRITICAL FIX: Inject <a-scene> directly without a wrapper div.
+        AR.js videoTexture: false creates a native <video> element.
+        We force it to fill the screen natively via the new CSS block.
       */
-      const wrapper = document.createElement('div');
-      wrapper.id = 'ar-scene-wrapper';
-      wrapper.style.cssText = 'position:fixed;inset:0;z-index:1;';
-      wrapper.innerHTML = `
+      const tempDiv = document.createElement('div');
+      tempDiv.innerHTML = `
         <a-scene
           id="ar-scene"
           vr-mode-ui="enabled: false"
@@ -733,29 +786,14 @@
           loading-screen="enabled: false">
           <a-camera gps-projected-camera="originDestinationOffset: 0" rotation-reader></a-camera>
           ${entityMarkup}
-        </a-scene>`;
+        </a-scene>
+      `;
+      // Extract the parsed <a-scene> from our temp container
+      const sceneNode = tempDiv.firstElementChild;
 
       // Insert as first child so all UI overlays (z-index 9999) sit above it
       setTimeout(() => {
-        document.body.insertBefore(wrapper, document.body.firstChild);
-
-        // Watch for AR.js camera video element and force correct sizing
-        const videoObserver = new MutationObserver(() => {
-          // AR.js creates a <video> element directly in the body
-          const arVideo = document.querySelector('video[autoplay]');
-          if (arVideo) {
-            arVideo.style.cssText = `
-              position: fixed !important;
-              top: 0 !important; left: 0 !important;
-              width: 100% !important; height: 100% !important;
-              object-fit: cover !important;
-              z-index: -1 !important;
-              background: #000;
-            `;
-            videoObserver.disconnect(); // Stop watching once found
-          }
-        });
-        videoObserver.observe(document.body, { childList: true, subtree: true });
+        document.body.insertBefore(sceneNode, document.body.firstChild);
       }, 0);
 
       // GPS watcher

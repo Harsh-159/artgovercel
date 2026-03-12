@@ -5,7 +5,7 @@ import { getArtworks } from '../lib/firebase';
 import { Artwork } from '../lib/types';
 import { useNavigate } from 'react-router-dom';
 import { clsx } from 'clsx';
-import { Map, MapPin } from 'lucide-react';
+import { Map, MapPin, Search } from 'lucide-react';
 
 const MOODS = [
     { id: 'calm', label: 'Calm', icon: '😌' },
@@ -38,6 +38,7 @@ export const DiscoverPage: React.FC = () => {
     const [mood, setMood] = useState<string | null>(null);
     const [categories, setCategories] = useState<string[]>([]);
     const [maxDistance, setMaxDistance] = useState<number | null>(null);
+    const [keyword, setKeyword] = useState<string>('');
 
     const [isSearching, setIsSearching] = useState(false);
     const [results, setResults] = useState<{ artwork: Artwork; score: number }[] | null>(null);
@@ -65,7 +66,7 @@ export const DiscoverPage: React.FC = () => {
         setResults(null);
 
         setTimeout(() => {
-            const matches = matchArtworks(artworks, { mood, categories, maxDistanceMetres: maxDistance }, userLocation.lat, userLocation.lng);
+            const matches = matchArtworks(artworks, { mood, categories, maxDistanceMetres: maxDistance, keyword: keyword.trim() || null }, userLocation.lat, userLocation.lng);
             setResults(matches);
             setIsSearching(false);
         }, 1200); // Simulate processing time for UX
@@ -87,6 +88,24 @@ export const DiscoverPage: React.FC = () => {
                 {/* Filters */}
                 {!results && !isSearching && (
                     <div className="space-y-8 animate-fade-in">
+                        {/* Keyword Search */}
+                        <div>
+                            <h2 className="text-sm font-bold text-text-secondary uppercase tracking-wider mb-4">What are you looking for?</h2>
+                            <div className="bg-surface border border-white/10 rounded-full flex items-center px-4 py-3 focus-within:border-accent focus-within:ring-1 focus-within:ring-accent transition-all">
+                                <Search size={18} className="text-text-secondary mr-3" />
+                                <input
+                                    type="text"
+                                    placeholder="e.g. 'mural', 'jazz', 'neon'"
+                                    value={keyword}
+                                    onChange={(e) => setKeyword(e.target.value)}
+                                    className="bg-transparent border-none outline-none text-white w-full placeholder:text-text-secondary/50"
+                                    onKeyDown={(e) => {
+                                        if (e.key === 'Enter') handleSearch();
+                                    }}
+                                />
+                            </div>
+                        </div>
+
                         {/* Mood */}
                         <div>
                             <h2 className="text-sm font-bold text-text-secondary uppercase tracking-wider mb-4">How are you feeling?</h2>
@@ -220,13 +239,7 @@ export const DiscoverPage: React.FC = () => {
                             <div className="space-y-4">
                                 {results.map(({ artwork, score }) => (
                                     <div key={artwork.id} className="bg-surface hover:bg-surface/80 border border-white/10 rounded-2xl p-4 flex gap-4 cursor-pointer transition-colors group" onClick={() => navigate(`/ar/${artwork.id}`)}>
-                                        <div className="w-20 h-20 rounded-xl bg-black overflow-hidden flex-shrink-0 border border-white/5 relative">
-                                            {artwork.mediaType === 'image' && <img src={artwork.mediaUrl} className="w-full h-full object-cover" />}
-                                            {artwork.mediaType === 'video' && <video src={artwork.mediaUrl} className="w-full h-full object-cover" />}
-                                            {artwork.mediaType === 'audio' && <div className="w-full h-full flex items-center justify-center bg-yellow-900/50 text-2xl">♫</div>}
-                                            {artwork.mediaType === 'voice' && <div className="w-full h-full flex items-center justify-center bg-pink-900/50 text-2xl">🎤</div>}
-                                            {artwork.mediaType === 'model3d' && <div className="w-full h-full flex items-center justify-center bg-teal-900/50 text-2xl">🧊</div>}
-                                        </div>
+                                        {/* Preview Image Removed */}
 
                                         <div className="flex-1 min-w-0 pr-2">
                                             <div className="flex justify-between items-start mb-1">

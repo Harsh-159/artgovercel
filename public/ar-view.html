@@ -36,7 +36,16 @@
       width: 100%;
       height: 100%;
       overflow: hidden;
+      background: transparent;
+      /* CRITICAL: #000 hides AR.js video on iOS */
+    }
+
+    #bg-fill {
+      position: fixed;
+      inset: 0;
       background: #000;
+      z-index: -3;
+      /* Placed behind AR.js video which is z-index: -2 */
     }
 
     /* Back button overlaid on top of AR scene */
@@ -342,6 +351,8 @@
 </head>
 
 <body>
+  <!-- Dark fallback background strictly behind the AR camera feed -->
+  <div id="bg-fill"></div>
 
   <!-- Back button -->
   <button id="back-btn" onclick="goBack()">
@@ -392,26 +403,11 @@
     <button class="back-link" onclick="goBack()">Maybe later</button>
   </div>
 
-  <!--
-      THE AR SCENE
-      This is parsed AFTER A-Frame and AR.js are fully loaded 
-      (synchronous scripts in head guarantee this).
-      
-      gps-projected-camera and gps-projected-entity-place are used
-      for stability over the legacy gps-camera / gps-entity-place.
-      
-      The scene is initially empty — entities are added by JavaScript
-      once artwork data is loaded and GPS is ready.
-    -->
-  <a-scene vr-mode-ui="enabled: false"
-    arjs="sourceType: webcam; videoTexture: true; debugUIEnabled: false; trackingMethod: best"
-    renderer="antialias: true; alpha: true; precision: medium; logarithmicDepthBuffer: true"
-    loading-screen="enabled: false" id="ar-scene">
-
-    <a-camera gps-projected-camera="originDestinationOffset: 0" rotation-reader>
-    </a-camera>
-
-  </a-scene>
+  <!-- Container for dynamic A-Frame scene -->
+  <div id="scene-container"
+    style="position: fixed; inset: 0; z-index: 0; pointer-events: auto; width: 100%; height: 100%;">
+    <!-- Scene injected via JavaScript -->
+  </div>
 
   <script>
     // ── Read URL params ──────────────────────────────────────────────
@@ -519,11 +515,8 @@
       }
     }
 
-    // ── GPS status display ───────────────────────────────────────────
-    let gpsReady = false;
-
     async function startAR() {
-      // Request Device Motion for iOS 13+
+      // 1. Request Device Motion for iOS 13+
       if (typeof DeviceOrientationEvent !== 'undefined' && typeof DeviceOrientationEvent.requestPermission === 'function') {
         try {
           const permissionState = await DeviceOrientationEvent.requestPermission();
@@ -536,29 +529,102 @@
         }
       }
 
-      // Request Camera Explicitly (to ensure iOS prompts immediately on user gesture)
-      try {
-        await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } });
-      } catch (e) {
-        console.error("Camera error:", e);
-      }
-
       document.getElementById('start-overlay').classList.add('hidden');
       document.getElementById('loading-overlay').classList.remove('hidden');
 
+      // 2. Build entity markup synchronously inside gesture handler
+      let entityMarkup = '';
+      const gpsAttr = `latitude: ${lat}; longitude: ${lng}`;
+
+      if (isUnlocked && mediaUrl && lat && lng) {
+        if (mediaType === 'image') {
+          entityMarkup = `
+            <a-assets>
+              <img id="arImg" src="${mediaUrl}" crossorigin="anonymous">
+            </a-assets>
+            <a-image
+              src="#arImg"
+              gps-projected-entity-place="${gpsAttr}"
+              look-at="[gps-projected-camera]"   
+              scale="10 10 1"
+              material="transparent: true; alphaTest: 0.1; side: double"
+              animation="property: scale; from: 9.5 9.5 1; to: 10 10 1; dir: alternate; dur: 2000; loop: true; easing: easeInOutSine">
+            </a-image>
+          `;
+        } else if (mediaType === 'video') {
+          entityMarkup = `
+            <a-assets>
+              <video id="arVideo" src="${mediaUrl}" autoplay loop crossorigin="anonymous" playsinline webkit-playsinline></video>
+            </a-assets>
+            <a-video
+              src="#arVideo"
+              gps-projected-entity-place="${gpsAttr}"
+              look-at="[gps-projected-camera]"
+              width="16" height="9"
+              material="side: double">
+            </a-video>
+          `;
+        } else if (mediaType === 'audio' || mediaType === 'voice') {
+          // Fallback native audio to guarantee playback
+          const audio = document.createElement('audio');
+          audio.src = mediaUrl;
+          audio.autoplay = true;
+          audio.loop = true;
+          document.body.appendChild(audio);
+
+          const colors = ['#FF6B9D', '#4488FF', '#FFD700', '#44FF88'];
+          const positions = [-0.6, -0.2, 0.2, 0.6];
+          const durations = [400, 600, 500, 450];
+
+          entityMarkup = `
+            <a-assets>
+              <audio id="arAudio" src="${mediaUrl}" autoplay loop crossorigin="anonymous"></audio>
+            </a-assets>
+            <a-entity gps-projected-entity-place="${gpsAttr}" look-at="[gps-projected-camera]">
+              <a-box color="${colors[0]}" position="${positions[0]} 0 0" width="0.2" height="1" depth="0.2" animation="property: scale; from: 1 0.5 1; to: 1 2 1; dir: alternate; dur: ${durations[0]}; loop: true; easing: easeInOutSine"></a-box>
+              <a-box color="${colors[1]}" position="${positions[1]} 0 0" width="0.2" height="1" depth="0.2" animation="property: scale; from: 1 1.5 1; to: 1 0.3 1; dir: alternate; dur: ${durations[1]}; loop: true; easing: easeInOutSine"></a-box>
+              <a-box color="${colors[2]}" position="${positions[2]} 0 0" width="0.2" height="1" depth="0.2" animation="property: scale; from: 1 0.8 1; to: 1 1.8 1; dir: alternate; dur: ${durations[2]}; loop: true; easing: easeInOutSine"></a-box>
+              <a-box color="${colors[3]}" position="${positions[3]} 0 0" width="0.2" height="1" depth="0.2" animation="property: scale; from: 1 1.2 1; to: 1 0.4 1; dir: alternate; dur: ${durations[3]}; loop: true; easing: easeInOutSine"></a-box>
+            </a-entity>
+          `;
+        } else if (mediaType === 'model3d') {
+          entityMarkup = `
+            <a-entity
+              gltf-model="${mediaUrl}"
+              gps-projected-entity-place="${gpsAttr}"
+              scale="2 2 2"
+              animation="property: rotation; from: 0 0 0; to: 0 360 0; loop: true; dur: 8000; easing: linear">
+            </a-entity>
+          `;
+        }
+      }
+
+      // 3. Inject A-Frame scene
+      const sceneHtml = `
+          <a-scene
+            vr-mode-ui="enabled: false"
+            arjs="sourceType: webcam; videoTexture: true; debugUIEnabled: false; trackingMethod: best"
+            renderer="antialias: true; alpha: true; precision: medium; logarithmicDepthBuffer: true"
+            loading-screen="enabled: false"
+            embedded
+            id="ar-scene">
+            <a-camera gps-projected-camera="originDestinationOffset: 0" rotation-reader></a-camera>
+            ${entityMarkup}
+          </a-scene>
+      `;
+      document.getElementById('scene-container').innerHTML = sceneHtml;
+
+      // 4. Track GPS locally to dismiss loading screen
+      let watchId;
       if (navigator.geolocation) {
-        const watchId = navigator.geolocation.watchPosition(
+        watchId = navigator.geolocation.watchPosition(
           (pos) => {
             const acc = Math.round(pos.coords.accuracy);
-            document.getElementById('gps-text').textContent =
-              '±' + acc + 'm';
-
-            if (acc <= 30) {
+            document.getElementById('gps-text').textContent = '±' + acc + 'm';
+            if (acc <= 30 && !gpsReady) {
               document.getElementById('gps-dot').classList.add('ready');
-              if (!gpsReady) {
-                gpsReady = true;
-                hideLoadingOverlay();
-              }
+              gpsReady = true;
+              hideLoadingOverlay();
             }
           },
           (err) => {
@@ -571,113 +637,17 @@
         document.getElementById('gps-text').textContent = 'No GPS API';
       }
 
-      // Fallback: hide loading after 10 seconds regardless
-      setTimeout(hideLoadingOverlay, 10000);
+      setTimeout(() => {
+        if (!gpsReady) {
+          gpsReady = true;
+          hideLoadingOverlay();
+        }
+      }, 10000);
     }
 
     function hideLoadingOverlay() {
       const overlay = document.getElementById('loading-overlay');
-      if (overlay && !overlay.classList.contains('hidden')) {
-        overlay.classList.add('hidden');
-        // Inject art entity after overlay hides
-        if (isUnlocked) injectArtEntity();
-      }
-    }
-
-    // ── Inject AR entity ─────────────────────────────────────────────
-    function injectArtEntity() {
-      if (!mediaUrl || !lat || !lng) return;
-
-      const scene = document.getElementById('ar-scene');
-      const gpsAttr =
-        'latitude: ' + lat + '; longitude: ' + lng;
-
-      let entity;
-
-      if (mediaType === 'image') {
-        // Preload image as asset for reliability
-        const assets = document.createElement('a-assets');
-        const img = document.createElement('img');
-        img.id = 'arImg';
-        img.src = mediaUrl;
-        img.setAttribute('crossorigin', 'anonymous');
-        assets.appendChild(img);
-        scene.appendChild(assets);
-
-        entity = document.createElement('a-image');
-        entity.setAttribute('src', '#arImg');
-        entity.setAttribute('gps-projected-entity-place', gpsAttr);
-        entity.setAttribute('look-at', '[gps-projected-camera]');
-        entity.setAttribute('scale', '10 10 1');
-        entity.setAttribute('material',
-          'transparent: true; alphaTest: 0.1; side: double');
-
-      } else if (mediaType === 'video') {
-        const assets = document.createElement('a-assets');
-        const vid = document.createElement('video');
-        vid.id = 'arVideo';
-        vid.src = mediaUrl;
-        vid.setAttribute('autoplay', '');
-        vid.setAttribute('loop', '');
-        vid.setAttribute('crossorigin', 'anonymous');
-        vid.setAttribute('playsinline', '');
-        vid.setAttribute('webkit-playsinline', '');
-        vid.muted = false;
-        assets.appendChild(vid);
-        scene.appendChild(assets);
-
-        entity = document.createElement('a-video');
-        entity.setAttribute('src', '#arVideo');
-        entity.setAttribute('gps-projected-entity-place', gpsAttr);
-        entity.setAttribute('look-at', '[gps-projected-camera]');
-        entity.setAttribute('width', '16');
-        entity.setAttribute('height', '9');
-        entity.setAttribute('material', 'side: double');
-
-      } else if (mediaType === 'audio' || mediaType === 'voice') {
-        // Play audio via HTML element, show visual in AR
-        const audio = document.createElement('audio');
-        audio.src = mediaUrl;
-        audio.autoplay = true;
-        audio.loop = true;
-        document.body.appendChild(audio);
-
-        // AR visualiser — 4 animated bars
-        entity = document.createElement('a-entity');
-        entity.setAttribute('gps-projected-entity-place', gpsAttr);
-        entity.setAttribute('look-at', '[gps-projected-camera]');
-
-        const colors = ['#FF6B9D', '#4488FF', '#FFD700', '#44FF88'];
-        const positions = [-0.6, -0.2, 0.2, 0.6];
-        const durations = [400, 600, 500, 450];
-
-        positions.forEach((x, i) => {
-          const bar = document.createElement('a-box');
-          bar.setAttribute('color', colors[i]);
-          bar.setAttribute('position', x + ' 0 0');
-          bar.setAttribute('width', '0.2');
-          bar.setAttribute('height', '1');
-          bar.setAttribute('depth', '0.2');
-          bar.setAttribute('animation',
-            'property: scale; from: 1 0.5 1; to: 1 2 1; ' +
-            'dir: alternate; dur: ' + durations[i] + '; ' +
-            'loop: true; easing: easeInOutSine');
-          entity.appendChild(bar);
-        });
-
-      } else if (mediaType === 'model3d') {
-        entity = document.createElement('a-entity');
-        entity.setAttribute('gltf-model', mediaUrl);
-        entity.setAttribute('gps-projected-entity-place', gpsAttr);
-        entity.setAttribute('scale', '2 2 2');
-        entity.setAttribute('animation',
-          'property: rotation; from: 0 0 0; to: 0 360 0; ' +
-          'loop: true; dur: 8000; easing: linear');
-      }
-
-      if (entity) {
-        scene.appendChild(entity);
-      }
+      if (overlay) overlay.classList.add('hidden');
     }
   </script>
 

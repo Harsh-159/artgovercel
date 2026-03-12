@@ -47,22 +47,40 @@
       background: #000;
     }
 
-    /* CRITICAL FIX: Prevent AR.js from shifting the video off-screen */
+    /*
+      AR.js (videoTexture:false) injects a <video> into <body>.
+      It tries to resize/position it with JS — on many Android
+      Chrome builds this results in 0×0 or off-screen placement.
+      We override everything so the video ALWAYS fills the viewport
+      and sits BEHIND the transparent WebGL canvas.
+
+      z-index stacking (low → high):
+        video  = 0   (camera feed — the background)
+        canvas = 1   (WebGL with alpha — see-through to video)
+        UI     = 9999 (overlays)
+    */
     #arjs-video,
-    body>video {
+    body>video,
+    body>.arjs-video {
       position: fixed !important;
       top: 0 !important;
       left: 0 !important;
       width: 100vw !important;
       height: 100vh !important;
+      min-width: 100vw !important;
+      min-height: 100vh !important;
       margin: 0 !important;
       padding: 0 !important;
       transform: none !important;
       object-fit: cover !important;
-      z-index: -999 !important;
+      z-index: 0 !important;
     }
 
     .a-canvas {
+      position: fixed !important;
+      top: 0 !important;
+      left: 0 !important;
+      z-index: 1 !important;
       background-color: transparent !important;
     }
 
@@ -716,9 +734,8 @@
               src="#arImg"
               gps-projected-entity-place="${gpsAttr}"
               look-at="[gps-projected-camera]"
-              scale="10 10 1"
-              material="transparent: true; alphaTest: 0.1; side: double"
-              animation="property: scale; from: 9.5 9.5 1; to: 10 10 1; dir: alternate; dur: 2000; loop: true; easing: easeInOutSine">
+              scale="5 5 1"
+              material="transparent: true; alphaTest: 0.1; side: double">
             </a-image>`;
 
         } else if (mediaType === 'video') {
@@ -759,7 +776,10 @@
             </a-entity>`;
         }
 
-        entityMarkup += `
+        // Only add the blue sphere beacon for non-image types
+        // (images already have a visible plane — showing both is confusing)
+        if (mediaType !== 'image') {
+          entityMarkup += `
             <a-sphere
               color="#4488FF"
               radius="1"
@@ -767,7 +787,8 @@
               material="color: #4488FF; emissive: #4488FF; emissiveIntensity: 0.5; transparent: true; opacity: 0.9"
               animation="property: scale; from: 0.9 0.9 0.9; to: 1.1 1.1 1.1; dir: alternate; dur: 1500; loop: true; easing: easeInOutSine">
             </a-sphere>
-        `;
+          `;
+        }
       }
 
       /*
@@ -781,7 +802,7 @@
           id="ar-scene"
           vr-mode-ui="enabled: false"
           arjs="sourceType: webcam; videoTexture: false; debugUIEnabled: false; trackingMethod: best"
-          renderer="antialias: true; alpha: true; clearColor: #000; clearAlpha: 0; precision: medium; logarithmicDepthBuffer: true"
+          renderer="antialias: true; alpha: true; clearColor: transparent; clearAlpha: 0; precision: medium"
           background="color: transparent"
           loading-screen="enabled: false">
           <a-camera gps-projected-camera="originDestinationOffset: 0" rotation-reader></a-camera>

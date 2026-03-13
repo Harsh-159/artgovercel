@@ -6,7 +6,7 @@ import { Artwork, UserProfile } from './types';
 
 const firebaseConfig = {
   apiKey: import.meta.env.VITE_FIREBASE_API_KEY || "demo",
-  authDomain: "artgo-ai.vercel.app",
+  authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN || "artgo-af96d.firebaseapp.com",
   projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID || "demo",
   storageBucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET || "demo",
   messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID || "demo",
@@ -203,7 +203,6 @@ export const signInWithGoogle = async () => {
     await signInWithRedirect(auth!, provider);
   } catch (error: any) {
     console.error('Sign in redirect error:', error);
-    // auth/unauthorized-domain means you need to add this domain in Firebase Console
     if (error.code === 'auth/unauthorized-domain') {
       throw new Error(
         'This domain is not authorized for Firebase Auth. ' +

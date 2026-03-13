@@ -45,7 +45,8 @@ export const usePortalState = () => {
     }, []);
 
     const activatePortal = async (city: string, lat: number, lng: number) => {
-        if (!profile || profile.portalCount <= 0) return false;
+        // Portals are now always available (no gating / thresholds).
+        if (!profile) return false;
 
         const newProfile = {
             ...profile,
@@ -53,7 +54,7 @@ export const usePortalState = () => {
             portalCity: city,
             portalCoordinates: { lat, lng },
             portalActivatedAt: new Date().toISOString(),
-            portalCount: profile.portalCount - 1
+            portalCount: profile.portalCount
         };
 
         setProfile(newProfile);

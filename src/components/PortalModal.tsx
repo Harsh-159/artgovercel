@@ -88,14 +88,14 @@ export const PortalModal: React.FC<PortalModalProps> = ({
                         return (
                             <button
                                 key={c.name}
-                                disabled={isActive || activating || (!profile?.portalActive && count === 0)}
+                                disabled={isActive || activating}
                                 onClick={() => handleActivate(c.name, c.lat, c.lng)}
                                 className={clsx(
                                     "w-full flex items-center justify-between p-4 border rounded-xl transition-all",
                                     isActive
                                         ? "bg-accent/20 border-accent text-white cursor-default"
                                         : "bg-white/5 border-white/10 hover:bg-white/10 hover:scale-[1.02] text-white",
-                                    (!profile?.portalActive && count === 0) && !isActive && "opacity-50 grayscale cursor-not-allowed hover:scale-100 hover:bg-white/5"
+                                    false
                                 )}
                             >
                                 <div className="flex items-center gap-4">
@@ -107,14 +107,9 @@ export const PortalModal: React.FC<PortalModalProps> = ({
                                         </div>
                                     </div>
                                 </div>
-                                {!isActive && count > 0 && (
+                                {!isActive && (
                                     <div className="bg-accent text-black text-xs font-bold px-3 py-1.5 rounded-full shadow-[0_0_15px_rgba(0,255,209,0.3)]">
                                         Travel
-                                    </div>
-                                )}
-                                {!isActive && count === 0 && (
-                                    <div className="bg-white/10 text-text-secondary text-xs font-bold px-3 py-1.5 rounded-full">
-                                        Locked
                                     </div>
                                 )}
                             </button>

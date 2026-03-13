@@ -43,28 +43,41 @@ export const CameraDiscovery: React.FC<CameraDiscoveryProps> = ({ artworks, user
     const [heading, setHeading] = useState<number>(0);
     const [pitch, setPitch] = useState<number>(0);
 
-    // Start camera
+    // Start camera (after user gesture / permission flow).
     useEffect(() => {
+        if (hasPermission !== true) return;
+
         let stream: MediaStream | null = null;
+        let cancelled = false;
 
         const initCamera = async () => {
             try {
                 stream = await navigator.mediaDevices.getUserMedia({
-                    video: { facingMode: 'environment' }
+                    video: { facingMode: { ideal: 'environment' } }
                 });
-                if (videoRef.current) {
-                    videoRef.current.srcObject = stream;
+                if (cancelled) return;
+                const v = videoRef.current;
+                if (v) {
+                    v.srcObject = stream;
+                    // On some mobile browsers, explicit play is required even with autoplay.
+                    const tryPlay = async () => {
+                        try { await v.play(); } catch { }
+                    };
+                    if (v.readyState >= 1) tryPlay();
+                    v.onloadedmetadata = () => { tryPlay(); };
                 }
             } catch (err) {
                 console.error("Camera access denied:", err);
             }
         };
+
         initCamera();
 
         return () => {
+            cancelled = true;
             if (stream) stream.getTracks().forEach(t => t.stop());
         };
-    }, []);
+    }, [hasPermission]);
 
     // Request Orientation permissions (required for iOS 13+)
     const requestOrientation = async () => {

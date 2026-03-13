@@ -333,8 +333,21 @@
       text-align: center;
     }
 
-    #unlock-overlay.hidden {
+    #unlock-overlay.hidden,
+    #condition-overlay.hidden {
       display: none;
+    }
+
+    .condition-icon {
+      font-size: 48px;
+      margin-bottom: 10px;
+    }
+
+    .condition-title {
+      color: #FFD700;
+      font-family: 'Space Mono', monospace;
+      font-size: 20px;
+      font-weight: bold;
     }
 
     .lock-icon {
@@ -549,6 +562,15 @@
     <button class="back-link" style="margin-top:8px" onclick="goBack()">Maybe later</button>
   </div>
 
+  <div id="condition-overlay" class="hidden">
+    <div class="condition-icon" id="condition-icon">⏳</div>
+    <div class="condition-title" id="condition-title">Condition Not Met</div>
+    <div class="start-sub" id="condition-msg" style="margin: 10px 0 20px 0;">
+      This artwork only appears under specific conditions.
+    </div>
+    <button class="start-btn" onclick="goBack()">Back to Map</button>
+  </div>
+
   <script>
     const params = new URLSearchParams(window.location.search);
     const artworkId = params.get('id');
@@ -564,6 +586,48 @@
     const FB_PROJECT = params.get('fbProject');
     const portalLat = params.get('portalLat');
     const portalLng = params.get('portalLng');
+    const appearDuring = (params.get('appearDuring') || 'Always').split(',');
+
+    // ── Environmental Conditions Detection ──
+    const now = new Date();
+    const month = now.getMonth();
+    const hour = now.getHours();
+
+    const env = {
+      time: hour >= 6 && hour < 20 ? 'Day' : 'Night',
+      isSummer: month >= 5 && month <= 7,
+      isRaining: false
+    };
+
+    const activeConditions = ['Always', env.time];
+    if (env.isSummer) activeConditions.push('Summer');
+    if (env.isRaining) activeConditions.push('Rain');
+
+    const isConditionMet = appearDuring.includes('Always') || appearDuring.some(c => activeConditions.includes(c));
+
+    if (!isConditionMet) {
+      setTimeout(() => {
+        const overlay = document.getElementById('condition-overlay');
+        overlay.classList.remove('hidden');
+        
+        const msg = document.getElementById('condition-msg');
+        const icon = document.getElementById('condition-icon');
+        
+        if (appearDuring.includes('Summer')) {
+          icon.textContent = '🌻';
+          msg.textContent = 'This artwork only appears in Summer.';
+        } else if (appearDuring.includes('Rain')) {
+          icon.textContent = '🌧️';
+          msg.textContent = 'This artwork only appears when it rains.';
+        } else if (appearDuring.includes('Night')) {
+          icon.textContent = '🌙';
+          msg.textContent = 'This artwork only appears at night.';
+        } else if (appearDuring.includes('Day')) {
+          icon.textContent = '☀️';
+          msg.textContent = 'This artwork only appears during the day.';
+        }
+      }, 100);
+    }
 
     // ── Proximity vibration state ──────────────────────────────────────────
     // Tracks which (artworkId + threshold) combos have already fired.

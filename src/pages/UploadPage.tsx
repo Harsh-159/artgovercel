@@ -3,6 +3,7 @@ import { useNavigate, useLocation } from 'react-router-dom';
 import { Category, MediaType } from '../lib/types';
 import { saveArtwork, signInWithGoogle, auth, generateTokenId } from '../lib/firebase';
 import { uploadToCloudinary } from '../lib/cloudinary';
+import { checkConditionsMet } from '../lib/conditions';
 import { ArrowLeft, Upload as UploadIcon, MapPin } from 'lucide-react';
 import Map, { Marker } from 'react-map-gl';
 import { clsx } from 'clsx';

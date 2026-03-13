@@ -4,6 +4,7 @@ import { useNavigate } from 'react-router-dom';
 import { getArtworks } from '../lib/firebase';
 import { Artwork } from '../lib/types';
 import { Orb } from '../components/Orb';
+import { getActiveConditions, getCurrentEnvironment } from '../lib/conditions';
 import { LikeButton } from '../components/LikeButton';
 import { Navigation } from '../components/Navigation';
 import { PortalModal } from '../components/PortalModal';
@@ -200,17 +201,23 @@ export const MapPage: React.FC = () => {
               </div>
             </Marker>
           )}
-
-          {artworks.map(artwork => (
-            <Marker
-              key={artwork.id}
-              longitude={artwork.lng}
-              latitude={artwork.lat}
-              anchor="center"
-            >
-              <Orb artwork={artwork} onClick={() => handleOrbClick(artwork)} />
-            </Marker>
-          ))}
+          {artworks
+            .filter(artwork => {
+              const appearDuring = (artwork as any).appearDuring || ['Always'];
+              if (appearDuring.includes('Always')) return true;
+              const active = getActiveConditions();
+              return appearDuring.some((c: string) => active.includes(c as any));
+            })
+            .map(artwork => (
+              <Marker
+                key={artwork.id}
+                longitude={artwork.lng}
+                latitude={artwork.lat}
+                anchor="center"
+              >
+                <Orb artwork={artwork} onClick={() => handleOrbClick(artwork)} />
+              </Marker>
+            ))}
 
           {/* 3D Buildings Layer */}
           <Layer

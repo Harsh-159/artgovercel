@@ -70,6 +70,7 @@ export const ARPage: React.FC = () => {
       likes: (selectedArtwork.likes || 0).toString(),
       origin: window.location.origin,
       fbProject: import.meta.env.VITE_FIREBASE_PROJECT_ID || '',
+      appearDuring: (selectedArtwork as any).appearDuring?.join(',') || 'Always',
     });
 
     if (profile?.portalActive && profile.portalCoordinates) {

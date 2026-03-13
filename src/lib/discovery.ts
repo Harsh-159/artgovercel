@@ -43,8 +43,13 @@ async function aiKeywordMatch(
     keyword: string
 ): Promise<Map<string, number>> {
     const scores = new Map<string, number>();
-    const apiKey = process.env.GEMINI_API_KEY;
-    if (!apiKey || !keyword.trim()) return scores;
+    // Note: Vite ONLY exposes VITE_ prefixed variables to the client.
+    // If search isn't finding anything, check the console for "AI Match Failed".
+    const apiKey = import.meta.env.VITE_GEMINI_API_KEY || (import.meta as any).env?.GEMINI_API_KEY;
+    if (!apiKey || apiKey === "YOUR_GEMINI_API_KEY_HERE" || !keyword.trim()) {
+        console.warn("[Discovery] No valid Gemini API key found (uses 'VITE_GEMINI_API_KEY' or 'GEMINI_API_KEY')");
+        return scores;
+    }
 
     // Build an artwork list for Gemini to evaluate
     const artworkLines = artworks.map(a => {
@@ -125,41 +130,63 @@ export const matchArtworks = async (
         });
 
     // Step 2: AI keyword scoring (if keyword provided)
-    const aiScores = prefs.keyword?.trim()
-        ? await aiKeywordMatch(candidates, prefs.keyword.trim())
+    const keyword = prefs.keyword?.trim().toLowerCase();
+    const aiScores = keyword
+        ? await aiKeywordMatch(candidates, keyword)
         : new Map<string, number>();
 
     const hasAI = aiScores.size > 0;
 
-    // Step 3: If using AI, filter out artworks with a very low AI score (< 2)
-    const filtered = hasAI
-        ? candidates.filter(a => (aiScores.get(a.id) ?? 0) >= 2)
-        : candidates;
+    // Step 3: Keyword Filtering & Fallback
+    const filtered = candidates.filter(a => {
+        if (!keyword) return true;
+        
+        // Use AI score if available
+        if (hasAI) {
+            return (aiScores.get(a.id) ?? 0) >= 2;
+        }
+
+        // Fallback: simple string match
+        const title = a.title.toLowerCase();
+        const desc = (a.description || "").toLowerCase();
+        return title.includes(keyword) || desc.includes(keyword) || a.category.toLowerCase().includes(keyword);
+    });
 
     // Step 4: Score and sort
     return filtered
         .map(a => {
             let score = 0;
+            const dist = getDistanceMetres(userLat, userLng, a.lat, a.lng);
 
             // Mood weight
             if (prefs.mood && MOOD_CATEGORY_WEIGHTS[prefs.mood]) {
                 score += MOOD_CATEGORY_WEIGHTS[prefs.mood][a.category] || 0;
             }
 
-            // AI keyword relevance (scaled: max AI boost = 8 points)
+            // AI keyword relevance (scaled: max AI boost = 10 points)
             const aiScore = aiScores.get(a.id);
             if (aiScore !== undefined) {
-                score += (aiScore / 10) * 8;
+                score += aiScore;
+            } else if (keyword) {
+                // Local match boost if AI failed but keyword matched
+                score += 5;
+            }
+
+            // Distance penalty (crucial for "Any" distance mode)
+            // -2 points per 1km starting from 100m. Large distances (like Birmingham @ 140km) get -280 points.
+            if (dist > 100) {
+                const km = (dist - 100) / 1000;
+                score -= km * 2; 
             }
 
             // Likes boost (popular = better match, up to 3 points)
-            score += Math.min(a.likes / 20, 3);
+            score += Math.min(a.likes / 50, 3);
 
-            // Randomness injection (±0.5) — prevents exact ties
-            score += (Math.random() - 0.5);
+            // Randomness injection (±0.2)
+            score += (Math.random() - 0.5) * 0.4;
 
             return { artwork: a, score, aiScore };
         })
         .sort((a, b) => b.score - a.score)
-        .slice(0, 12);  // max 12 results
+        .slice(0, keyword ? 3 : 12);
 };

@@ -105,7 +105,7 @@ export const ProfilePage: React.FC = () => {
                     <div className="w-24 h-24 bg-gradient-to-tr from-accent to-purple-500 rounded-full flex items-center justify-center mb-8 shadow-lg shadow-accent/20">
                         <span className="text-4xl">👤</span>
                     </div>
-                    <h1 className="text-3xl font-heading font-bold text-white mb-3">Your Gallery</h1>
+                    <h1 className="text-3xl font-heading font-bold text-white mb-3">Your Collection</h1>
                     <p className="text-text-secondary text-base mb-10 leading-relaxed">
                         Sign in to trace your digital footprint, manage earnings, and view your owned collection.
                     </p>
@@ -306,9 +306,9 @@ export const ProfilePage: React.FC = () => {
                         <button
                             onClick={() => navigate('/upload')}
                             className="bg-accent text-white font-bold py-3 px-8 rounded-full shadow-[0_0_20px_rgba(68,136,255,0.4)] hover:scale-105 active:scale-95 transition-all"
-                        >
-                            Drop Art Now
-                        </button>
+                    >
+                        Drop Art Now
+                    </button>
                     </div>
                 ) : (
                     <div className="grid grid-cols-2 gap-4 pb-12">

@@ -106,7 +106,7 @@ export const MapPage: React.FC = () => {
       {/* Top Bar */}
       <div className="absolute top-0 left-0 right-0 p-6 z-10 flex justify-between items-center pointer-events-none">
         <h1 className="text-2xl font-heading font-bold text-white drop-shadow-[0_0_10px_rgba(255,255,255,0.5)] pointer-events-auto">
-          GalleryOS
+          ArtGO
         </h1>
         <div className="flex gap-2 items-center pointer-events-auto">
           <button

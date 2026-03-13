@@ -34,7 +34,7 @@ export const CertificatePage: React.FC = () => {
         });
 
         const link = document.createElement('a');
-        link.download = `galleryos-certificate-${cert.tokenId.slice(0, 8)}.png`;
+        link.download = `artgo-certificate-${cert.tokenId.slice(0, 8)}.png`;
         link.href = canvas.toDataURL('image/png');
         link.click();
     };
@@ -52,7 +52,7 @@ export const CertificatePage: React.FC = () => {
         return (
             <div className="min-h-screen bg-background flex flex-col items-center justify-center p-6 text-center">
                 <h1 className="text-2xl font-bold text-white mb-2">Certificate Not Found</h1>
-                <p className="text-text-secondary mb-8">This token does not exist on the GalleryOS Network.</p>
+                <p className="text-text-secondary mb-8">This token does not exist on the ArtGO Network.</p>
                 <button
                     onClick={() => navigate('/map')}
                     className="bg-accent text-white font-bold py-3 px-8 rounded-full shadow-[0_0_20px_rgba(68,136,255,0.4)]"
@@ -88,7 +88,7 @@ export const CertificatePage: React.FC = () => {
 
                     {/* Header */}
                     <div className="flex justify-between items-center mb-6 pb-4 border-b border-white/10">
-                        <span className="font-heading font-black tracking-tighter text-2xl text-white drop-shadow-[0_0_10px_rgba(255,255,255,0.3)]">Gallery<span className="text-accent">OS</span></span>
+                        <span className="font-heading font-black tracking-tighter text-2xl text-white drop-shadow-[0_0_10px_rgba(255,255,255,0.3)]">Art<span className="text-accent">GO</span></span>
                         <span className="text-[#FFD700] text-[10px] font-bold uppercase tracking-widest border border-[#FFD700]/30 px-2 py-1 rounded bg-[#FFD700]/10">Verified Ownership</span>
                     </div>
 
@@ -154,7 +154,7 @@ export const CertificatePage: React.FC = () => {
                             <div className="text-[10px] text-text-secondary mb-1">NETWORK CONFIRMATION</div>
                             <div className="flex items-center gap-2">
                                 <div className="w-2 h-2 rounded-full bg-green-500 animate-pulse shadow-[0_0_10px_rgba(34,197,94,0.6)]"></div>
-                                <span className="text-white/70 text-xs">Polygon (Simulated) · GalleryOS Network</span>
+                                <span className="text-white/70 text-xs">Polygon (Simulated) · ArtGO Network</span>
                             </div>
                         </div>
                     </div>
@@ -165,14 +165,14 @@ export const CertificatePage: React.FC = () => {
                         <div>
                             <div className="text-green-400 font-bold text-sm mb-1">Authenticity Verified</div>
                             <div className="text-green-400/70 text-[10px] leading-relaxed">
-                                This unforgeable cryptographic certificate represents absolute digital ownership of a location-anchored artwork on the GalleryOS Network.
+                                This unforgeable cryptographic certificate represents absolute digital ownership of a location-anchored artwork on the ArtGO Network.
                             </div>
                         </div>
                     </div>
 
                     {/* Footer inside card for screenshot context */}
                     <div className="text-center text-[9px] text-white/30 uppercase tracking-[0.2em] mt-8 pt-4 border-t border-white/5">
-                        galleryos.art · Cambridge RealityX Hackathon 2026
+                        artgo.art · Cambridge RealityX Hackathon 2026
                     </div>
                 </div>
             </div>

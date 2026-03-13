@@ -5,7 +5,7 @@ import { getArtworks } from '../lib/firebase';
 import { Artwork } from '../lib/types';
 import { useNavigate } from 'react-router-dom';
 import { clsx } from 'clsx';
-import { Map, MapPin, Search } from 'lucide-react';
+import { Map, MapPin, Search, Sparkles } from 'lucide-react';
 
 const MOODS = [
     { id: 'calm', label: 'Calm', icon: '😌' },
@@ -41,7 +41,8 @@ export const DiscoverPage: React.FC = () => {
     const [keyword, setKeyword] = useState<string>('');
 
     const [isSearching, setIsSearching] = useState(false);
-    const [results, setResults] = useState<{ artwork: Artwork; score: number }[] | null>(null);
+    const [isAiPhase, setIsAiPhase] = useState(false);
+    const [results, setResults] = useState<{ artwork: Artwork; score: number; aiScore?: number }[] | null>(null);
 
     useEffect(() => {
         const unsub = getArtworks(setArtworks);
@@ -56,20 +57,35 @@ export const DiscoverPage: React.FC = () => {
         return () => unsub();
     }, []);
 
-    const handleSearch = () => {
+    const handleSearch = async () => {
         if (!userLocation) {
             alert("We need your location to find nearby art!");
             return;
         }
 
         setIsSearching(true);
+        setIsAiPhase(false);
         setResults(null);
 
-        setTimeout(() => {
-            const matches = matchArtworks(artworks, { mood, categories, maxDistanceMetres: maxDistance, keyword: keyword.trim() || null }, userLocation.lat, userLocation.lng);
+        // Brief initial delay for UX, then show AI phase if keyword provided
+        await new Promise(r => setTimeout(r, 400));
+        if (keyword.trim()) setIsAiPhase(true);
+
+        try {
+            const matches = await matchArtworks(
+                artworks,
+                { mood, categories, maxDistanceMetres: maxDistance, keyword: keyword.trim() || null },
+                userLocation.lat,
+                userLocation.lng
+            );
             setResults(matches);
+        } catch (err) {
+            console.error('Search failed:', err);
+            setResults([]);
+        } finally {
             setIsSearching(false);
-        }, 1200); // Simulate processing time for UX
+            setIsAiPhase(false);
+        }
     };
 
     const getDistanceStr = (artLat: number, artLng: number) => {
@@ -90,12 +106,16 @@ export const DiscoverPage: React.FC = () => {
                     <div className="space-y-8 animate-fade-in">
                         {/* Keyword Search */}
                         <div>
-                            <h2 className="text-sm font-bold text-text-secondary uppercase tracking-wider mb-4">What are you looking for?</h2>
+                            <h2 className="text-sm font-bold text-text-secondary uppercase tracking-wider mb-2">What are you looking for?</h2>
+                            <p className="text-xs text-text-secondary mb-3 flex items-center gap-1.5">
+                                <Sparkles size={12} className="text-accent" />
+                                Powered by Gemini AI — describe any vibe, theme, or feeling
+                            </p>
                             <div className="bg-surface border border-white/10 rounded-full flex items-center px-4 py-3 focus-within:border-accent focus-within:ring-1 focus-within:ring-accent transition-all">
                                 <Search size={18} className="text-text-secondary mr-3" />
                                 <input
                                     type="text"
-                                    placeholder="e.g. 'mural', 'jazz', 'neon'"
+                                    placeholder="e.g. 'dark and melancholy', 'hopeful energy', 'urban chaos'"
                                     value={keyword}
                                     onChange={(e) => setKeyword(e.target.value)}
                                     className="bg-transparent border-none outline-none text-white w-full placeholder:text-text-secondary/50"
@@ -205,6 +225,34 @@ export const DiscoverPage: React.FC = () => {
                 {/* Loading State */}
                 {isSearching && (
                     <div className="space-y-4">
+                        {/* AI status banner */}
+                        <div className={clsx(
+                            "flex items-center gap-3 p-4 rounded-2xl border transition-all duration-500",
+                            isAiPhase
+                                ? "bg-accent/10 border-accent/30"
+                                : "bg-surface border-white/5"
+                        )}>
+                            <div className={clsx(
+                                "w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0",
+                                isAiPhase ? "bg-accent/20" : "bg-white/5"
+                            )}>
+                                {isAiPhase
+                                    ? <Sparkles size={16} className="text-accent animate-pulse" />
+                                    : <Search size={16} className="text-text-secondary animate-pulse" />
+                                }
+                            </div>
+                            <div>
+                                <p className="text-sm font-bold text-white">
+                                    {isAiPhase ? "Gemini AI is scanning artworks..." : "Finding nearby art..."}
+                                </p>
+                                <p className="text-xs text-text-secondary">
+                                    {isAiPhase
+                                        ? "Matching your search with descriptions and themes"
+                                        : "Applying your filters"}
+                                </p>
+                            </div>
+                        </div>
+
                         {[1, 2, 3].map(i => (
                             <div key={i} className="bg-surface/50 border border-white/5 rounded-2xl p-4 flex gap-4 animate-pulse">
                                 <div className="w-20 h-20 rounded-xl bg-white/10 flex-shrink-0" />
@@ -222,7 +270,15 @@ export const DiscoverPage: React.FC = () => {
                 {results && (
                     <div className="animate-fade-in">
                         <div className="flex justify-between items-center mb-6">
-                            <h2 className="text-accent font-bold">Found {results.length} pieces for your vibe</h2>
+                            <div>
+                                <h2 className="text-accent font-bold">Found {results.length} pieces for your vibe</h2>
+                                {keyword.trim() && (
+                                    <p className="text-xs text-text-secondary mt-1 flex items-center gap-1">
+                                        <Sparkles size={10} className="text-accent" />
+                                        AI-ranked for "{keyword}"
+                                    </p>
+                                )}
+                            </div>
                             <button onClick={() => setResults(null)} className="text-xs text-text-secondary hover:text-white uppercase tracking-wider font-bold">Refine Filters</button>
                         </div>
 
@@ -230,27 +286,38 @@ export const DiscoverPage: React.FC = () => {
                             <div className="flex flex-col items-center justify-center py-12 text-center">
                                 <span className="text-6xl mb-4">🗺️</span>
                                 <h3 className="text-white font-bold text-xl mb-2">Nothing matches nearby</h3>
-                                <p className="text-text-secondary mb-8">Try adjusting your mood or distance radius.</p>
-                                <button onClick={() => { setMood(null); setCategories([]); setMaxDistance(null); setResults(null); }} className="bg-white/10 hover:bg-white/20 text-white px-6 py-3 rounded-full font-bold transition-colors">
+                                <p className="text-text-secondary mb-8">Try a different search or expand your distance.</p>
+                                <button onClick={() => { setMood(null); setCategories([]); setMaxDistance(null); setKeyword(''); setResults(null); }} className="bg-white/10 hover:bg-white/20 text-white px-6 py-3 rounded-full font-bold transition-colors">
                                     Clear Filters
                                 </button>
                             </div>
                         ) : (
                             <div className="space-y-4">
-                                {results.map(({ artwork, score }) => (
+                                {results.map(({ artwork, score, aiScore }) => (
                                     <div key={artwork.id} className="bg-surface hover:bg-surface/80 border border-white/10 rounded-2xl p-4 flex gap-4 cursor-pointer transition-colors group" onClick={() => navigate(`/ar/${artwork.id}`)}>
-                                        {/* Preview Image Removed */}
-
                                         <div className="flex-1 min-w-0 pr-2">
                                             <div className="flex justify-between items-start mb-1">
                                                 <h3 className="text-white font-bold truncate text-lg leading-tight group-hover:text-accent transition-colors">{artwork.title}</h3>
-                                                <div className="flex gap-1 mt-1 flex-shrink-0">
-                                                    {[1, 2, 3].map(i => (
-                                                        <div key={i} className={clsx("w-2 h-2 rounded-full", score > 4 ? (i <= 3 ? "bg-accent" : "bg-white/20") : score >= 2 ? (i <= 2 ? "bg-accent" : "bg-white/20") : (i <= 1 ? "bg-accent" : "bg-white/20"))} />
-                                                    ))}
+                                                <div className="flex items-center gap-2 mt-1 flex-shrink-0">
+                                                    {/* AI match badge */}
+                                                    {aiScore !== undefined && aiScore >= 7 && (
+                                                        <span className="flex items-center gap-0.5 text-[10px] font-bold text-accent bg-accent/10 border border-accent/20 px-2 py-0.5 rounded-full">
+                                                            <Sparkles size={9} /> AI Match
+                                                        </span>
+                                                    )}
+                                                    <div className="flex gap-1">
+                                                        {[1, 2, 3].map(i => (
+                                                            <div key={i} className={clsx("w-2 h-2 rounded-full", score > 4 ? (i <= 3 ? "bg-accent" : "bg-white/20") : score >= 2 ? (i <= 2 ? "bg-accent" : "bg-white/20") : (i <= 1 ? "bg-accent" : "bg-white/20"))} />
+                                                        ))}
+                                                    </div>
                                                 </div>
                                             </div>
                                             <p className="text-xs text-text-secondary mb-2 truncate">by {artwork.artistName}</p>
+
+                                            {/* Description snippet if available */}
+                                            {artwork.description && (
+                                                <p className="text-xs text-text-secondary/70 mb-2 line-clamp-2 italic">"{artwork.description}"</p>
+                                            )}
 
                                             <div className="flex items-center gap-2 mb-3">
                                                 <span className="text-[10px] uppercase font-bold px-2 py-0.5 rounded border" style={{ borderColor: CATEGORIES.find(c => c.id === artwork.category)?.color, color: CATEGORIES.find(c => c.id === artwork.category)?.color, backgroundColor: `${CATEGORIES.find(c => c.id === artwork.category)?.color}10` }}>

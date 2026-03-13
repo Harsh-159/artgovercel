@@ -33,36 +33,112 @@ export const getDistanceMetres = (
     return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
 };
 
-export const matchArtworks = (
+/**
+ * Calls Gemini to semantically score artworks against a user's search query.
+ * Returns a Map of artworkId → AI relevance score (0–10).
+ * If no API key or network error, returns an empty map (graceful fallback).
+ */
+async function aiKeywordMatch(
+    artworks: Artwork[],
+    keyword: string
+): Promise<Map<string, number>> {
+    const scores = new Map<string, number>();
+    const apiKey = process.env.GEMINI_API_KEY;
+    if (!apiKey || !keyword.trim()) return scores;
+
+    // Build an artwork list for Gemini to evaluate
+    const artworkLines = artworks.map(a => {
+        const desc = a.description?.trim()
+            ? a.description.trim()
+            : `A ${a.category} artwork.`;
+        return `ID:${a.id} | Title: "${a.title}" | Category: ${a.category} | Description: ${desc}`;
+    }).join('\n');
+
+    const prompt = `You are an AI assistant helping users discover street art. The user is searching for: "${keyword}".
+
+Below is a list of artworks. For each artwork, give a relevance score from 0 to 10 based on how well it semantically matches the search query. Consider themes, mood, style, and anything implied by the description. Even if exact words don't match, score conceptual similarity highly.
+
+ARTWORK LIST:
+${artworkLines}
+
+Respond ONLY with a valid JSON array. Each object must have exactly:
+- "id": the artwork ID string (as given after "ID:")
+- "score": a number from 0 to 10
+
+Example: [{"id":"abc123","score":8},{"id":"def456","score":3}]
+
+Do not include any explanation or markdown. Only output the JSON array.`;
+
+    try {
+        const response = await fetch(
+            `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`,
+            {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    contents: [{ parts: [{ text: prompt }] }],
+                    generationConfig: {
+                        maxOutputTokens: 1024,
+                        temperature: 0.2,
+                    }
+                })
+            }
+        );
+
+        const data = await response.json();
+        if (data.error) throw new Error(data.error.message);
+
+        const raw = data.candidates?.[0]?.content?.parts?.[0]?.text?.trim() || '[]';
+        // Strip possible markdown code fences
+        const cleaned = raw.replace(/^```json?\n?/, '').replace(/\n?```$/, '').trim();
+        const parsed: { id: string; score: number }[] = JSON.parse(cleaned);
+
+        for (const item of parsed) {
+            if (item.id && typeof item.score === 'number') {
+                scores.set(item.id, Math.max(0, Math.min(10, item.score)));
+            }
+        }
+    } catch (err) {
+        console.error('[AI Discovery] Gemini call failed, falling back to no AI scores:', err);
+    }
+
+    return scores;
+}
+
+export const matchArtworks = async (
     artworks: Artwork[],
     prefs: DiscoveryPreferences,
     userLat: number,
     userLng: number
-): { artwork: Artwork; score: number }[] => {
-    return artworks
+): Promise<{ artwork: Artwork; score: number; aiScore?: number }[]> => {
+
+    // Step 1: Hard filters (distance + category)
+    const candidates = artworks
         .filter(a => a.isActive)
         .filter(a => {
-            // Distance filter
             if (!prefs.maxDistanceMetres) return true;
-            return getDistanceMetres(userLat, userLng, a.lat, a.lng)
-                <= prefs.maxDistanceMetres;
+            return getDistanceMetres(userLat, userLng, a.lat, a.lng) <= prefs.maxDistanceMetres;
         })
         .filter(a => {
-            // Category filter (if any selected)
             if (prefs.categories.length === 0) return true;
             return prefs.categories.includes(a.category);
-        })
-        .filter(a => {
-            // Keyword filter
-            if (!prefs.keyword || prefs.keyword.trim() === '') return true;
-            const kw = prefs.keyword.toLowerCase();
-            return (
-                a.title.toLowerCase().includes(kw) ||
-                (a.description && a.description.toLowerCase().includes(kw))
-            );
-        })
+        });
+
+    // Step 2: AI keyword scoring (if keyword provided)
+    const aiScores = prefs.keyword?.trim()
+        ? await aiKeywordMatch(candidates, prefs.keyword.trim())
+        : new Map<string, number>();
+
+    const hasAI = aiScores.size > 0;
+
+    // Step 3: If using AI, filter out artworks with a very low AI score (< 2)
+    const filtered = hasAI
+        ? candidates.filter(a => (aiScores.get(a.id) ?? 0) >= 2)
+        : candidates;
+
+    // Step 4: Score and sort
+    return filtered
         .map(a => {
-            // Score each artwork
             let score = 0;
 
             // Mood weight
@@ -70,13 +146,19 @@ export const matchArtworks = (
                 score += MOOD_CATEGORY_WEIGHTS[prefs.mood][a.category] || 0;
             }
 
+            // AI keyword relevance (scaled: max AI boost = 8 points)
+            const aiScore = aiScores.get(a.id);
+            if (aiScore !== undefined) {
+                score += (aiScore / 10) * 8;
+            }
+
             // Likes boost (popular = better match, up to 3 points)
             score += Math.min(a.likes / 20, 3);
 
-            // Randomness injection (±1.5 points) — prevents same order every time
-            score += (Math.random() * 3) - 1.5;
+            // Randomness injection (±0.5) — prevents exact ties
+            score += (Math.random() - 0.5);
 
-            return { artwork: a, score };
+            return { artwork: a, score, aiScore };
         })
         .sort((a, b) => b.score - a.score)
         .slice(0, 12);  // max 12 results

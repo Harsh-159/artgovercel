@@ -143,7 +143,7 @@ export const MapPage: React.FC = () => {
             onClick={() => setMapMode(mapMode === 'map' ? 'camera' : 'map')}
             className="bg-accent/20 hover:bg-accent/30 text-accent backdrop-blur-md rounded-full px-4 h-10 flex items-center gap-2 font-bold transition-all border border-accent/30"
           >
-            <span className="text-sm">{mapMode === 'map' ? '📷 AI Camera' : '🗺️ Map'}</span>
+            <span className="text-sm">{mapMode === 'map' ? 'AR Mode' : 'Map Mode'}</span>
           </button>
           <button
             onClick={() => {

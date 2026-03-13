@@ -124,16 +124,9 @@ export const MapPage: React.FC = () => {
     <div className="w-full h-screen bg-background relative overflow-hidden">
       {/* Top Bar */}
       <div className="absolute top-0 left-0 right-0 p-6 z-10 flex justify-between items-center pointer-events-none">
-        <div className="flex flex-col pointer-events-auto">
-          <h1 className="text-2xl font-heading font-bold text-white drop-shadow-[0_0_10px_rgba(255,255,255,0.5)]">
-            GalleryOS
-          </h1>
-          {profile?.portalActive && (
-            <div className="mt-1 bg-accent font-bold text-black text-[10px] px-2 py-0.5 rounded shadow-[0_0_10px_rgba(0,255,209,0.5)] inline-block uppercase tracking-wider">
-              {profile.portalCity} Portal Active
-            </div>
-          )}
-        </div>
+        <h1 className="text-2xl font-heading font-bold text-white drop-shadow-[0_0_10px_rgba(255,255,255,0.5)] pointer-events-auto">
+          ArtGO
+        </h1>
         <div className="flex gap-2 items-center pointer-events-auto">
           <button
             onClick={() => setIsPortalModalOpen(true)}
